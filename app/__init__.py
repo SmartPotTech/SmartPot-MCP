@@ -1,0 +1,1 @@
+"""SmartPot MCP Application Package."""

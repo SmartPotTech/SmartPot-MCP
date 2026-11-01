@@ -1,0 +1,214 @@
+"""Cliente asíncrono de SmartPot-API con un pool de conexiones compartido.
+
+El servidor no tiene cuenta propia: cada llamada usa el token de conexión de quien está conectado, así la API
+aplica a cada persona sus cultivos y el alcance (lectura o control) que eligió al crear la conexión. Las
+herramientas nunca reciben ni devuelven tokens.
+"""
+
+from typing import Any
+
+import httpx
+from mcp.server.mcpserver.exceptions import ToolError
+
+from app.core.config import settings
+from app.core.logging import logger
+from app.core.security import require_object_id
+
+
+class SmartPotAPIError(ToolError):
+    """Error devuelto por SmartPot-API. Es un ToolError para que el mensaje en español de la API llegue al modelo
+    (el SDK oculta el texto de cualquier otra excepción)."""
+
+    def __init__(self, status_code: int, message: str) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.message = message
+
+
+class SmartPotClient:
+    """Pool HTTP compartido hacia la API; `for_token` da la vista de una persona."""
+
+    def __init__(
+        self,
+        base_url: str | None = None,
+        timeout: float | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
+        self.base_url = (base_url or settings.api_url).rstrip("/")
+        self._timeout = timeout or settings.timeout_seconds
+        self._transport = transport
+        self._client: httpx.AsyncClient | None = None
+
+    def _http(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                base_url=self.base_url,
+                timeout=httpx.Timeout(self._timeout, connect=5.0),
+                limits=httpx.Limits(max_keepalive_connections=20, max_connections=50),
+                headers={"Accept": "application/json", "User-Agent": "SmartPot-MCP/1.0"},
+                transport=self._transport,
+                follow_redirects=False,
+            )
+        return self._client
+
+    async def close(self) -> None:
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+
+    def for_token(self, token: str) -> "UserAPI":
+        return UserAPI(self, token)
+
+    async def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        token: str | None = None,
+        params: dict[str, Any] | None = None,
+        json_body: Any = None,
+    ) -> Any:
+        headers = {"Authorization": f"Bearer {token}"} if token else None
+        try:
+            resp = await self._http().request(method, path, params=params, json=json_body, headers=headers)
+        except httpx.HTTPError as exc:
+            logger.error("Fallo de red con SmartPot-API en %s %s: %s", method, path, type(exc).__name__)
+            raise SmartPotAPIError(503, "SmartPot-API no está disponible") from exc
+        if resp.is_error:
+            raise SmartPotAPIError(resp.status_code, _error_message(resp))
+        if resp.status_code == 204 or not resp.content:
+            return None
+        return resp.json()
+
+    # --- Públicas (sin token) ---
+    async def health(self) -> dict[str, Any]:
+        return await self.request("GET", "/health")
+
+    async def crop_profiles(self) -> Any:
+        return await self.request("GET", "/api/v1/crop-profiles")
+
+
+class UserAPI:
+    """Las operaciones de la API en nombre de una persona (su token de conexión)."""
+
+    def __init__(self, client: SmartPotClient, token: str) -> None:
+        self._client = client
+        self._token = token
+
+    async def _call(self, method: str, path: str, **kwargs: Any) -> Any:
+        return await self._client.request(method, path, token=self._token, **kwargs)
+
+    @staticmethod
+    def _crop(crop_id: str) -> str:
+        return f"/api/v1/crops/{require_object_id(crop_id, 'crop_id')}"
+
+    async def crop_profiles(self) -> Any:
+        return await self._client.crop_profiles()
+
+    # --- Cuenta ---
+    async def me(self) -> dict[str, Any]:
+        return await self._call("GET", "/api/v1/users/me")
+
+    # --- Cultivos ---
+    async def list_crops(self) -> list[dict[str, Any]]:
+        return await self._call("GET", "/api/v1/crops")
+
+    async def get_crop(self, crop_id: str) -> dict[str, Any]:
+        return await self._call("GET", self._crop(crop_id))
+
+    async def create_crop(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._call("POST", "/api/v1/crops", json_body=payload)
+
+    async def update_crop(self, crop_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._call("PUT", self._crop(crop_id), json_body=payload)
+
+    async def delete_crop(self, crop_id: str) -> None:
+        await self._call("DELETE", self._crop(crop_id))
+
+    async def set_automation(self, crop_id: str, enabled: bool) -> Any:
+        return await self._call("PUT", f"{self._crop(crop_id)}/automation", json_body={"enabled": enabled})
+
+    async def crop_weather(self, crop_id: str) -> Any:
+        return await self._call("GET", f"{self._crop(crop_id)}/weather")
+
+    # --- Lecturas ---
+    async def latest_reading(self, crop_id: str) -> dict[str, Any]:
+        return await self._call("GET", f"{self._crop(crop_id)}/readings/latest")
+
+    async def readings(self, crop_id: str, from_time: str | None, to_time: str | None, limit: int) -> Any:
+        params: dict[str, Any] = {"limit": limit}
+        if from_time:
+            params["from"] = from_time
+        if to_time:
+            params["to"] = to_time
+        return await self._call("GET", f"{self._crop(crop_id)}/readings", params=params)
+
+    async def readings_summary(self, crop_id: str, hours: int) -> dict[str, Any]:
+        return await self._call("GET", f"{self._crop(crop_id)}/readings/summary", params={"hours": hours})
+
+    async def record_reading(self, crop_id: str, measures: dict[str, float]) -> dict[str, Any]:
+        return await self._call("POST", f"{self._crop(crop_id)}/readings", json_body=measures)
+
+    # --- Actuadores y comandos ---
+    async def actuators(self, crop_id: str) -> list[dict[str, Any]]:
+        return await self._call("GET", f"{self._crop(crop_id)}/actuators")
+
+    async def send_command(
+        self, crop_id: str, actuator_id: str, action: str, duration_seconds: int | None
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {"actuatorId": require_object_id(actuator_id, "actuator_id"), "action": action}
+        if duration_seconds is not None:
+            body["durationSeconds"] = duration_seconds
+        return await self._call("POST", f"{self._crop(crop_id)}/commands", json_body=body)
+
+    async def send_bulk_command(
+        self, crop_ids: list[str], actuator_type: str, action: str, duration_seconds: int | None
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "cropIds": [require_object_id(c, "crop_ids") for c in crop_ids],
+            "actuatorType": actuator_type,
+            "action": action,
+        }
+        if duration_seconds is not None:
+            body["durationSeconds"] = duration_seconds
+        return await self._call("POST", "/api/v1/commands/bulk", json_body=body)
+
+    async def crop_commands(self, crop_id: str, limit: int) -> Any:
+        return await self._call("GET", f"{self._crop(crop_id)}/commands", params={"limit": limit})
+
+    # --- IA ---
+    async def insights(self, crop_id: str) -> dict[str, Any]:
+        return await self._call("GET", f"{self._crop(crop_id)}/insights")
+
+    async def learning_status(self) -> Any:
+        return await self._call("GET", "/api/v1/ai/learning")
+
+    # --- Panel general ---
+    async def overview(self) -> dict[str, Any]:
+        return await self._call("GET", "/api/v1/overview")
+
+    async def series(self, metric: str, hours: int) -> dict[str, Any]:
+        return await self._call("GET", "/api/v1/overview/series", params={"metric": metric, "hours": hours})
+
+    async def fleet(self) -> Any:
+        return await self._call("GET", "/api/v1/overview/fleet")
+
+    # --- Notificaciones ---
+    async def notifications(self) -> Any:
+        return await self._call("GET", "/api/v1/notifications")
+
+    async def unread_count(self) -> Any:
+        return await self._call("GET", "/api/v1/notifications/unread-count")
+
+    async def mark_read(self, notification_id: str) -> Any:
+        path = f"/api/v1/notifications/{require_object_id(notification_id, 'notification_id')}/read"
+        return await self._call("PUT", path)
+
+
+def _error_message(resp: httpx.Response) -> str:
+    try:
+        body = resp.json()
+    except ValueError:
+        return f"SmartPot-API respondió HTTP {resp.status_code}"
+    if isinstance(body, dict):
+        return str(body.get("message") or body.get("error") or f"SmartPot-API respondió HTTP {resp.status_code}")
+    return f"SmartPot-API respondió HTTP {resp.status_code}"

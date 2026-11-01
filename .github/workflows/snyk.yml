@@ -1,0 +1,109 @@
+name: Snyk Security Scan
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    # Escaneo semanal los lunes a las 07:00 UTC
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+    inputs:
+      enforce_gate:
+        description: 'Detener y bloquear pipeline ante vulnerabilidades altas/críticas'
+        type: boolean
+        default: false
+      severity_threshold:
+        description: 'Umbral de severidad de Snyk'
+        type: choice
+        default: 'high'
+        options:
+          - medium
+          - high
+          - critical
+
+permissions:
+  contents: write
+  pull-requests: write
+  security-events: write
+
+env:
+  SNYK_TOKEN: ${{ secrets.SNYK_PAT_ORG || secrets.SNYK_TOKEN }}
+  SNYK_CFG_ORG: ${{ vars.SNYK_CFG_ORG || vars.SNYK_SLUG_ORG || '9c3602e7-da44-48d5-a4d1-5c2f09f7eafe' }}
+
+jobs:
+  snyk-sca:
+    # En los PRs de Dependabot no llega el token de Snyk; esos cambios los revisa el CI.
+    if: github.actor != 'dependabot[bot]'
+    name: Snyk Open Source & Monitor (Python / uv)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up Snyk CLI
+        uses: snyk/actions/setup@11b673cfb4b0dc0d860a1323caa199d54950dcce # master al 2026-10-31
+
+      - name: Export requirements and install dependencies
+        run: |
+          uv export --no-dev --no-hashes --no-header --no-annotate -o requirements.txt
+          uv pip install --system -r requirements.txt
+
+      # 1. Security Gate: Alertar o Detener
+      - name: Run Snyk Test (Security Gate)
+        run: |
+          threshold="${{ inputs.severity_threshold || 'high' }}"
+          echo "::notice::Ejecutando Snyk Security Gate con umbral: $threshold"
+          snyk test \
+            --org="${{ env.SNYK_CFG_ORG }}" \
+            --file=requirements.txt \
+            --package-manager=pip \
+            --command=python3 \
+            --severity-threshold="$threshold" \
+            --sarif-file-output=snyk.sarif \
+            -- --allow-missing || {
+            code=$?
+            if [ $code -eq 1 ]; then
+              if [ "${{ github.event_name }}" = "pull_request" ] || [ "${{ inputs.enforce_gate }}" = "true" ]; then
+                echo "::error::Snyk Security Gate BLOQUEADO: Se detectaron vulnerabilidades de severidad $threshold en Python."
+                exit 1
+              else
+                echo "::warning::Snyk detectó vulnerabilidades en dependencias de Python."
+              fi
+            elif [ -f snyk.sarif ]; then
+              echo "::warning::Snyk finalizó con código $code pero generó reporte SARIF."
+            else
+              echo "::error::Error al ejecutar Snyk CLI (código $code)."
+              exit $code
+            fi
+          }
+
+      # 2. Alertar: Subir SARIF a GitHub Security Tab
+      - name: Upload SARIF to GitHub Security Tab
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('snyk.sarif') != ''
+        with:
+          sarif_file: snyk.sarif
+          category: snyk-python
+
+      # 3. Monitorear: snyk monitor en rama principal, schedule o dispatch
+      - name: Snyk Monitor (Continuous Protection & Auto Fix PRs)
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: |
+          echo "::notice::Publicando snapshot a Snyk Platform para monitoreo continuo 24/7 y habilitación de Automatic Fix PRs..."
+          snyk monitor \
+            --org="${{ env.SNYK_CFG_ORG }}" \
+            --file=requirements.txt \
+            --package-manager=pip \
+            --project-name="SmartPotTech/SmartPot-MCP"

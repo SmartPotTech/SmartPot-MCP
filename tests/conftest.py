@@ -1,0 +1,78 @@
+"""Fixtures: una SmartPot-API simulada que registra con qué token llega cada petición."""
+
+import httpx
+import pytest
+
+from app.client.api_client import SmartPotClient
+from app.core.config import settings
+from app.server.mcp_server import create_mcp_server
+
+CROP = "66f5a1000000000000000101"
+ACTUATOR = "66f5a1000000000000000201"
+TOKEN_ANA = "spt_" + "a" * 43
+TOKEN_LUIS = "spt_" + "b" * 43
+READ_ONLY = "spt_" + "r" * 43
+
+ACCOUNTS = {
+    TOKEN_ANA: {"id": "u1", "name": "Ana", "email": "ana@smartpot.app"},
+    TOKEN_LUIS: {"id": "u2", "name": "Luis", "email": "luis@smartpot.app"},
+    READ_ONLY: {"id": "u1", "name": "Ana", "email": "ana@smartpot.app"},
+}
+
+
+class FakeAPI:
+    def __init__(self) -> None:
+        self.seen: list[tuple[str, str, str | None]] = []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        auth = request.headers.get("authorization")
+        token = auth.removeprefix("Bearer ") if auth else None
+        path, method = request.url.path, request.method
+        self.seen.append((method, path, token))
+
+        if path == "/health":
+            return httpx.Response(200, json={"status": "UP"})
+        if path == "/api/v1/crop-profiles":
+            return httpx.Response(200, json=[{"type": "LETTUCE", "temperature": {"min": 15, "max": 22}}])
+        account = ACCOUNTS.get(token or "")
+        if account is None:
+            return httpx.Response(401, json={"message": "El token de conexión no es válido o fue revocado"})
+        if method != "GET" and token == READ_ONLY:
+            return httpx.Response(403, json={"message": "Esta conexión es de solo lectura"})
+        if path == "/api/v1/users/me":
+            return httpx.Response(200, json=account)
+        if path == "/api/v1/crops" and method == "GET":
+            return httpx.Response(200, json=[{"id": CROP, "name": f"Lechugas de {account['name']}"}])
+        if path == "/api/v1/crops" and method == "POST":
+            return httpx.Response(201, json={"crop": {"id": CROP}, "device": {"key": "secreta"}})
+        if path == f"/api/v1/crops/{CROP}":
+            return httpx.Response(200, json={"id": CROP, "name": "Lechugas", "type": "LETTUCE", "form": "NFT"})
+        if path == f"/api/v1/crops/{CROP}/commands" and method == "POST":
+            return httpx.Response(202, json={"id": "c1", "status": "PENDING"})
+        return httpx.Response(200, json={"ok": True})
+
+
+@pytest.fixture
+def fake_api() -> FakeAPI:
+    return FakeAPI()
+
+
+@pytest.fixture
+def client(fake_api: FakeAPI) -> SmartPotClient:
+    return SmartPotClient(base_url="http://api.test", transport=httpx.MockTransport(fake_api))
+
+
+@pytest.fixture
+def mcp_server(client: SmartPotClient):
+    return create_mcp_server(client)
+
+
+@pytest.fixture
+def stdio_token(monkeypatch: pytest.MonkeyPatch):
+    """Simula stdio: el token de la persona llega por el entorno."""
+
+    def set_token(token: str | None) -> None:
+        monkeypatch.setattr(settings, "api_token", token)
+
+    set_token(TOKEN_ANA)
+    return set_token

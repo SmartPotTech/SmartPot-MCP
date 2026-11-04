@@ -1,12 +1,146 @@
 # SmartPot-MCP
 
+[English](#english) | [Español](#español)
+
+---
+
+<a id="english"></a>
+
+## English
+
+SmartPot **Model Context Protocol (MCP)** server: enables MCP-compatible AI assistants to inspect crops, read telemetry, request AI diagnostics, and—when authorized by the user—operate actuators, always on behalf of the connected account.
+
+---
+
+### Per-Account Isolated Connections
+
+The server **does not have its own account**. Each user creates a connection token (`spt_…`) in the PWA under **Profile › Connections** with a defined scope:
+
+| Scope     | Capabilities                                                                       |
+|-----------|------------------------------------------------------------------------------------|
+| Read-only | Query crops, readings, diagnostics, overview dashboard, and notifications          |
+| Control   | Additionally create, edit, and delete crops, trigger actuators, and mark alerts    |
+
+The MCP client sends that token on every request (`Authorization: Bearer spt_…`) and the server forwards it to `SmartPot-API`, which enforces isolation: it only sees that account's crops and applies its scope. No connection can change the password, manage other connections, configure notification channels, or view device credentials. Revoking a connection in the PWA disconnects it immediately; the API stores only the SHA-256 digest of the token and records its last use.
+
+The HTTP transport is stateless across requests: each request is served in isolation using the token it carries.
+
+---
+
+### One-Command Deployment
+
+The image is public: `ghcr.io/smartpottech/smartpot-mcp`. It is included in the demo beta stack, which starts without cloning the code:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SmartPotTech/.github/main/docker/demo-beta/compose.yaml | docker compose -f - up -d --wait
+```
+
+The MCP server listens at `http://localhost:8002/mcp` (health check at `http://localhost:8002/health`). Sign in to the PWA at http://localhost:5173 with `demo@smartpot.app` / `SmartPot2026`, create a connection in **Profile › Connections**, and copy the displayed configuration.
+
+To run only this service pointing to an existing API:
+
+```bash
+docker run -d --name smartpot-mcp -p 127.0.0.1:8002:8002 --read-only --cap-drop ALL \
+  -e SMARTPOT_API_URL=http://host.docker.internal:8091 \
+  ghcr.io/smartpottech/smartpot-mcp:latest
+```
+
+---
+
+### Configuring the MCP Client
+
+#### HTTP (recommended)
+
+```json
+{
+  "mcpServers": {
+    "smartpot": {
+      "type": "http",
+      "url": "http://localhost:8002/mcp",
+      "headers": { "Authorization": "Bearer spt_…" }
+    }
+  }
+}
+```
+
+#### stdio (local client)
+
+```json
+{
+  "mcpServers": {
+    "smartpot": {
+      "command": "uv",
+      "args": ["--directory", "<SmartPot-MCP directory>", "run", "python", "-m", "app.main"],
+      "env": { "SMARTPOT_API_URL": "http://localhost:8091", "SMARTPOT_API_TOKEN": "spt_…" }
+    }
+  }
+}
+```
+
+---
+
+### Capabilities
+
+#### Tools
+
+| Group      | Tools                                                                                                            |
+|------------|------------------------------------------------------------------------------------------------------------------|
+| Account    | `get_account`                                                                                                    |
+| Crops      | `list_crops`, `get_crop`, `create_crop`, `update_crop`, `delete_crop`, `set_crop_automation`, `get_crop_weather` |
+| Readings   | `get_latest_reading`, `get_readings_history`, `get_readings_summary`, `record_reading`                           |
+| Actuators  | `list_actuators`, `send_actuator_command`, `send_bulk_command`, `list_commands`                                  |
+| AI         | `get_crop_insights`, `get_crop_profiles`, `get_learning_status`                                                  |
+| Overview   | `get_overview`, `get_metric_series`, `get_fleet`                                                                 |
+| Alerts     | `list_notifications`, `get_unread_count`, `mark_notification_read`                                               |
+
+Each tool declares whether it is read-only, idempotent, or destructive so the client prompts for confirmation before operating hardware or deleting data. When creating a physical crop, device credentials are never returned over MCP.
+
+#### Resources
+
+- `smartpot://crops/{crop_id}`, `smartpot://crops/{crop_id}/latest`, and `smartpot://crops/{crop_id}/insights`.
+- `smartpot://profiles` and `smartpot://health` (public).
+
+#### Prompts
+
+`agronomic_diagnosis`, `emergency_triage`, and `fleet_daily_summary`.
+
+---
+
+### Development
+
+Requires [uv](https://docs.astral.sh/uv/).
+
+```bash
+uv sync --frozen
+uv run python -m app.main                                  # stdio (uses SMARTPOT_API_TOKEN)
+TRANSPORT=streamable-http uv run python -m app.main        # HTTP on port 8002
+uv run ruff check . && uv run ruff format --check .
+uv run pytest
+```
+
+Tests mock the API and verify that each request arrives with the caller's token, that two accounts never mix, that missing tokens or session JWTs never reach the API, that a read-only connection cannot trigger actuators, and that device credentials are never exposed.
+
+### Container Security
+
+Unprivileged user (`1000:1000`), read-only filesystem, all capabilities dropped, and DNS rebinding protection (`MCP_ALLOWED_HOSTS` and `MCP_ALLOWED_ORIGINS`).
+
+### License
+
+MIT.
+
+---
+
+<a id="español"></a>
+
+## Español
+
 Servidor de **Model Context Protocol (MCP)** de SmartPot: permite que un asistente de IA compatible con MCP consulte
 los cultivos, lea la telemetría, pida el diagnóstico de la IA y, si la persona lo autoriza, accione los actuadores,
 siempre a nombre de la cuenta de quien se conecta.
 
 ---
 
-## Conexiones separadas por cuenta
+### Conexiones separadas por cuenta
 
 El servidor **no tiene cuenta propia**. Cada persona crea en la PWA, en **Perfil › Conexiones**, un token de conexión
 (`spt_…`) con un alcance:
@@ -25,7 +159,7 @@ El transporte HTTP no guarda estado entre peticiones: cada una se atiende de for
 
 ---
 
-## Despliegue en un comando
+### Despliegue en un comando
 
 La imagen es pública: `ghcr.io/smartpottech/smartpot-mcp`. Viene incluida en la demo beta, que se levanta sin
 descargar el código:
@@ -48,9 +182,9 @@ docker run -d --name smartpot-mcp -p 127.0.0.1:8002:8002 --read-only --cap-drop 
 
 ---
 
-## Configurar el cliente MCP
+### Configurar el cliente MCP
 
-### HTTP (recomendado)
+#### HTTP (recomendado)
 
 ```json
 {
@@ -64,7 +198,7 @@ docker run -d --name smartpot-mcp -p 127.0.0.1:8002:8002 --read-only --cap-drop 
 }
 ```
 
-### stdio (cliente local)
+#### stdio (cliente local)
 
 ```json
 {
@@ -80,9 +214,9 @@ docker run -d --name smartpot-mcp -p 127.0.0.1:8002:8002 --read-only --cap-drop 
 
 ---
 
-## Capacidades
+### Capacidades
 
-### Herramientas
+#### Herramientas
 
 | Grupo          | Herramientas                                                                                        |
 |----------------|-----------------------------------------------------------------------------------------------------|
@@ -97,18 +231,18 @@ docker run -d --name smartpot-mcp -p 127.0.0.1:8002:8002 --read-only --cap-drop 
 Cada herramienta declara si es de solo lectura, idempotente o destructiva, para que el cliente pida confirmación antes
 de mover hardware o borrar datos. Al crear un cultivo real, las credenciales del dispositivo nunca se devuelven por MCP.
 
-### Recursos
+#### Recursos
 
 - `smartpot://crops/{crop_id}`, `smartpot://crops/{crop_id}/latest` y `smartpot://crops/{crop_id}/insights`.
 - `smartpot://profiles` y `smartpot://health` (públicos).
 
-### Prompts
+#### Prompts
 
 `agronomic_diagnosis`, `emergency_triage` y `fleet_daily_summary`.
 
 ---
 
-## Desarrollo
+### Desarrollo
 
 Requiere [uv](https://docs.astral.sh/uv/).
 
@@ -124,11 +258,11 @@ Las pruebas simulan la API y comprueban que cada petición llega con el token de
 mezclan, que sin token o con un JWT de sesión no se llega a la API, que una conexión de solo lectura no acciona y que
 las credenciales del dispositivo no se exponen.
 
-## Seguridad del contenedor
+### Seguridad del contenedor
 
 Usuario sin privilegios (`1000:1000`), sistema de archivos de solo lectura, sin capacidades y protección contra DNS
 rebinding (`MCP_ALLOWED_HOSTS` y `MCP_ALLOWED_ORIGINS`).
 
-## Licencia
+### Licencia
 
 MIT.

@@ -1,4 +1,4 @@
-"""Instanciación y cableado del servidor MCP de SmartPot."""
+"""SmartPot MCP server instantiation and wiring."""
 
 from mcp.server.mcpserver import MCPServer
 from starlette.requests import Request
@@ -13,17 +13,17 @@ VERSION = "1.0.0"
 
 
 def create_mcp_server(client: SmartPotClient | None = None) -> MCPServer:
-    """Crea el servidor con sus herramientas, recursos, prompts y la sonda de salud."""
+    """Creates the server with its tools, resources, prompts, and health probe."""
     api_client = client or SmartPotClient()
 
     mcp = MCPServer(
         name="SmartPot",
         version=VERSION,
-        description="Cultivos hidropónicos de SmartPot: telemetría, diagnóstico de la IA y control de actuadores",
+        description="SmartPot hydroponic crops: telemetry, AI diagnosis, and actuator control",
         instructions=(
-            "Servidor MCP de SmartPot para monitorear y automatizar cultivos hidropónicos. Cada conexión pertenece "
-            "a una cuenta y tiene un alcance: de solo lectura o de control. Antes de accionar un actuador, crear, "
-            "editar o borrar un cultivo, pide confirmación explícita a la persona."
+            "SmartPot MCP server for monitoring and automating hydroponic crops. Each connection belongs "
+            "to an account and has a scope: read-only or control. Before triggering an actuator or creating, "
+            "editing, or deleting a crop, ask the user for explicit confirmation."
         ),
     )
 

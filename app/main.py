@@ -1,4 +1,4 @@
-"""Punto de entrada: stdio para clientes locales o streamable HTTP para el contenedor."""
+"""Entrypoint: stdio for local clients or streamable HTTP for the container."""
 
 import sys
 
@@ -16,7 +16,7 @@ mcp = create_mcp_server()
 
 
 def build_http_app(server: MCPServer | None = None) -> ASGIApp:
-    """App HTTP sin estado: cada petición lleva el token de conexión de quien llama y se atiende de forma aislada."""
+    """Stateless HTTP app: each request carries the caller's connection token and is served in isolation."""
     app = (server or mcp).streamable_http_app(
         streamable_http_path=settings.mcp_path,
         stateless_http=True,
@@ -37,13 +37,13 @@ app = build_http_app()
 
 def main() -> None:
     transport = settings.transport
-    logger.info("Iniciando SmartPot MCP en modo '%s'", transport)
+    logger.info("Starting SmartPot MCP in '%s' mode", transport)
     if transport == "stdio":
         mcp.run("stdio")
     elif transport == "streamable-http":
         uvicorn.run(app, host=settings.host, port=settings.port, log_level=settings.log_level.lower())
     else:
-        logger.error("Modo de transporte desconocido: %s", transport)
+        logger.error("Unknown transport mode: %s", transport)
         sys.exit(1)
 
 

@@ -1,4 +1,4 @@
-"""Registro del servidor. Escribe en stderr: en modo stdio, stdout es el canal del protocolo MCP."""
+"""Server logger. Writes to stderr: in stdio mode, stdout is reserved for the MCP protocol stream."""
 
 import logging
 import sys

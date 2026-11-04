@@ -1,4 +1,4 @@
-"""Configuración del servidor SmartPot MCP (variables de entorno)."""
+"""SmartPot MCP server configuration (environment variables)."""
 
 from typing import Literal
 
@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Ajustes del servidor MCP. Todos se leen del entorno o de un `.env` local."""
+    """MCP server settings. All values are read from environment variables or a local `.env` file."""
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

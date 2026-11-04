@@ -1,4 +1,4 @@
-"""Transporte HTTP: cada petición usa el token de quien llama y nada se comparte entre cuentas."""
+"""HTTP transport: each request uses the caller's token and nothing is shared across accounts."""
 
 import json
 
@@ -32,10 +32,10 @@ def test_health_is_public(http):
 
 
 def test_mcp_requires_a_connection_token(http, fake_api):
-    for token in (None, "eyJhbGciOiJIUzI1NiJ9.algo.firma", "spt_corto"):
+    for token in (None, "eyJhbGciOiJIUzI1NiJ9.payload.signature", "spt_short"):
         resp = _call(http, token, "list_crops")
         assert resp.status_code == 401
-        assert "Perfil › Conexiones" in resp.json()["error"]
+        assert "Profile › Connections" in resp.json()["error"]
     assert fake_api.seen == []
 
 
@@ -43,14 +43,14 @@ def test_each_request_uses_its_own_account(http, fake_api):
     ana = _call(http, TOKEN_ANA, "list_crops")
     luis = _call(http, TOKEN_LUIS, "list_crops")
     assert ana.status_code == luis.status_code == 200
-    assert "Lechugas de Ana" in ana.text and "Luis" not in ana.text
-    assert "Lechugas de Luis" in luis.text and "Ana" not in luis.text
+    assert "Ana's lettuce" in ana.text and "Luis" not in ana.text
+    assert "Luis's lettuce" in luis.text and "Ana" not in luis.text
     tokens = [token for method, path, token in fake_api.seen if path == "/api/v1/crops"]
     assert tokens == [TOKEN_ANA, TOKEN_LUIS]
 
 
 def test_unknown_host_is_rejected(http):
     resp = http.post(
-        "/mcp", headers={**HEADERS, "Authorization": f"Bearer {TOKEN_ANA}", "Host": "atacante.example"}, content="{}"
+        "/mcp", headers={**HEADERS, "Authorization": f"Bearer {TOKEN_ANA}", "Host": "attacker.example"}, content="{}"
     )
     assert resp.status_code in (400, 403, 421)

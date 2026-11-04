@@ -1,4 +1,4 @@
-"""Controles de seguridad: identificadores y token de conexión en el borde HTTP."""
+"""Security controls: object identifiers and connection token validation at the HTTP edge."""
 
 import re
 from collections.abc import Mapping
@@ -17,12 +17,12 @@ PUBLIC_PATHS = frozenset({"/health"})
 
 
 class InvalidIdentifierError(ValueError):
-    """Identificador con formato inválido."""
+    """Identifier with invalid format."""
 
 
 def require_object_id(value: str, field: str = "id") -> str:
     if not isinstance(value, str) or not _OBJECT_ID.fullmatch(value):
-        raise InvalidIdentifierError(f"El campo '{field}' debe ser un identificador de 24 caracteres hexadecimales")
+        raise InvalidIdentifierError(f"Field '{field}' must be a 24-character hexadecimal identifier")
     return value.lower()
 
 
@@ -31,7 +31,7 @@ def is_connection_token(token: str | None) -> bool:
 
 
 def bearer_from_headers(headers: Mapping[str, str] | None) -> str | None:
-    """Token de `Authorization: Bearer …` (las cabeceras de Starlette no distinguen mayúsculas)."""
+    """Extracts the token from `Authorization: Bearer …` (Starlette headers are case-insensitive)."""
     if not headers:
         return None
     value = headers.get("authorization") or headers.get("Authorization")
@@ -41,10 +41,10 @@ def bearer_from_headers(headers: Mapping[str, str] | None) -> str | None:
 
 
 class ConnectionTokenMiddleware:
-    """Exige un token de conexión de SmartPot en todas las rutas HTTP salvo las públicas.
+    """Requires a SmartPot connection token on all HTTP routes except public endpoints.
 
-    Solo comprueba el formato para responder 401 cuanto antes; la validez (que exista, que no esté revocado ni
-    vencido y su alcance) la decide SmartPot-API en cada llamada. Deja pasar `lifespan` para no romper el arranque.
+    Checks format early to return 401 immediately; token validity (existence, revocation, expiration, and scope)
+    is enforced by SmartPot-API on each request. Passes `lifespan` scopes through so startup is unaffected.
     """
 
     def __init__(self, app: ASGIApp) -> None:
@@ -63,8 +63,8 @@ class ConnectionTokenMiddleware:
                 break
         if not is_connection_token(token):
             body = (
-                '{"error":"Falta el token de conexión. Créalo en SmartPot, en Perfil › Conexiones, '
-                'y envíalo como Authorization: Bearer spt_…"}'
+                '{"error":"Missing connection token. Create one in SmartPot under Profile › Connections '
+                'and send it as Authorization: Bearer spt_…"}'
             ).encode()
             await send(
                 {

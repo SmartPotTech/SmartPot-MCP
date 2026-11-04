@@ -1,7 +1,7 @@
-"""Recursos MCP de SmartPot (`@mcp.resource()`): contexto de solo lectura en JSON.
+"""SmartPot MCP resources (`@mcp.resource()`): read-only JSON context.
 
-Los recursos de una cuenta llevan el cultivo en la URI (el SDK solo da el contexto de la petición, y con él el
-token, a las plantillas); la lista de cultivos y el panel general están como herramientas."""
+Account-scoped resources include the crop ID in the URI (the SDK only provides the request context, and with it
+the token, to URI templates); the crop list and general overview are exposed as tools."""
 
 import json
 from typing import Any
@@ -19,25 +19,25 @@ def _json(data: Any) -> str:
 def register_resources(mcp: MCPServer, client: SmartPotClient) -> None:
     @mcp.resource("smartpot://crops/{crop_id}", name="crop", mime_type="application/json")
     async def crop(ctx: Context, crop_id: str) -> str:
-        """Detalle de un cultivo."""
+        """Crop details."""
         return _json(await user_api(client, ctx).get_crop(crop_id))
 
     @mcp.resource("smartpot://crops/{crop_id}/latest", name="crop_latest_reading", mime_type="application/json")
     async def crop_latest(ctx: Context, crop_id: str) -> str:
-        """Última lectura de un cultivo."""
+        """Latest reading for a crop."""
         return _json(await user_api(client, ctx).latest_reading(crop_id))
 
     @mcp.resource("smartpot://crops/{crop_id}/insights", name="crop_insights", mime_type="application/json")
     async def crop_insights(ctx: Context, crop_id: str) -> str:
-        """Diagnóstico de la IA para un cultivo."""
+        """AI diagnosis for a crop."""
         return _json(await user_api(client, ctx).insights(crop_id))
 
     @mcp.resource("smartpot://profiles", name="crop_profiles", mime_type="application/json")
     async def profiles() -> str:
-        """Rangos óptimos por tipo de cultivo (público)."""
+        """Optimal ranges by crop species (public)."""
         return _json(await client.crop_profiles())
 
     @mcp.resource("smartpot://health", name="health", mime_type="application/json")
     async def health() -> str:
-        """Estado de la API y sus dependencias (base, caché, broker, IA, simulador); público."""
+        """Status of the API and its dependencies (database, cache, broker, AI, simulator); public."""
         return _json(await client.health())

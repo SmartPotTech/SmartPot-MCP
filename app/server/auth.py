@@ -1,4 +1,4 @@
-"""Resolución del token de conexión de cada llamada MCP."""
+"""Connection token resolution for each MCP call."""
 
 from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError
@@ -8,13 +8,13 @@ from app.core.config import settings
 from app.core.security import bearer_from_headers, is_connection_token
 
 MISSING_TOKEN = (
-    "Falta el token de conexión de SmartPot. Créalo en la aplicación, en Perfil › Conexiones, y configúralo en el "
-    "cliente MCP (cabecera Authorization en HTTP o SMARTPOT_API_TOKEN en stdio)."
+    "Missing SmartPot connection token. Create one in the application under Profile › Connections and configure it "
+    "in your MCP client (Authorization header over HTTP or SMARTPOT_API_TOKEN in stdio)."
 )
 
 
 def connection_token(ctx: Context | None) -> str:
-    """Token de quien llama: la cabecera Authorization de la petición HTTP o, en stdio, el del entorno."""
+    """Extracts the caller's token from the HTTP request Authorization header or, in stdio, the environment."""
     headers = None
     if ctx is not None:
         try:

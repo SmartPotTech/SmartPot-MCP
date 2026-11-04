@@ -21,7 +21,7 @@ FROM python:3.13-slim-bookworm
 RUN apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*
 
 LABEL org.opencontainers.image.title="SmartPot MCP" \
-      org.opencontainers.image.description="Servidor oficial Model Context Protocol (MCP) para SmartPot" \
+      org.opencontainers.image.description="Official Model Context Protocol (MCP) server for SmartPot" \
       org.opencontainers.image.source="https://github.com/SmartPotTech/SmartPot-MCP" \
       org.opencontainers.image.licenses="MIT"
 

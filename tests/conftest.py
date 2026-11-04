@@ -1,4 +1,4 @@
-"""Fixtures: una SmartPot-API simulada que registra con qué token llega cada petición."""
+"""Fixtures: simulated SmartPot-API recording which token accompanies each request."""
 
 import httpx
 import pytest
@@ -36,17 +36,17 @@ class FakeAPI:
             return httpx.Response(200, json=[{"type": "LETTUCE", "temperature": {"min": 15, "max": 22}}])
         account = ACCOUNTS.get(token or "")
         if account is None:
-            return httpx.Response(401, json={"message": "El token de conexión no es válido o fue revocado"})
+            return httpx.Response(401, json={"message": "The connection token is invalid or has been revoked"})
         if method != "GET" and token == READ_ONLY:
-            return httpx.Response(403, json={"message": "Esta conexión es de solo lectura"})
+            return httpx.Response(403, json={"message": "This connection is read-only"})
         if path == "/api/v1/users/me":
             return httpx.Response(200, json=account)
         if path == "/api/v1/crops" and method == "GET":
-            return httpx.Response(200, json=[{"id": CROP, "name": f"Lechugas de {account['name']}"}])
+            return httpx.Response(200, json=[{"id": CROP, "name": f"{account['name']}'s lettuce"}])
         if path == "/api/v1/crops" and method == "POST":
-            return httpx.Response(201, json={"crop": {"id": CROP}, "device": {"key": "secreta"}})
+            return httpx.Response(201, json={"crop": {"id": CROP}, "device": {"key": "secret"}})
         if path == f"/api/v1/crops/{CROP}":
-            return httpx.Response(200, json={"id": CROP, "name": "Lechugas", "type": "LETTUCE", "form": "NFT"})
+            return httpx.Response(200, json={"id": CROP, "name": "Lettuce", "type": "LETTUCE", "form": "NFT"})
         if path == f"/api/v1/crops/{CROP}/commands" and method == "POST":
             return httpx.Response(202, json={"id": "c1", "status": "PENDING"})
         return httpx.Response(200, json={"ok": True})
@@ -69,7 +69,7 @@ def mcp_server(client: SmartPotClient):
 
 @pytest.fixture
 def stdio_token(monkeypatch: pytest.MonkeyPatch):
-    """Simula stdio: el token de la persona llega por el entorno."""
+    """Simulates stdio: the user's token is provided via environment settings."""
 
     def set_token(token: str | None) -> None:
         monkeypatch.setattr(settings, "api_token", token)

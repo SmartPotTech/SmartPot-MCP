@@ -1,8 +1,7 @@
-"""Cliente asíncrono de SmartPot-API con un pool de conexiones compartido.
+"""Asynchronous SmartPot-API client with a shared connection pool.
 
-El servidor no tiene cuenta propia: cada llamada usa el token de conexión de quien está conectado, así la API
-aplica a cada persona sus cultivos y el alcance (lectura o control) que eligió al crear la conexión. Las
-herramientas nunca reciben ni devuelven tokens.
+The server has no service account of its own: each call uses the connected user's connection token so the API
+enforces their crops and selected scope (read-only or control). Tools never accept or return raw tokens.
 """
 
 from typing import Any
@@ -16,8 +15,8 @@ from app.core.security import require_object_id
 
 
 class SmartPotAPIError(ToolError):
-    """Error devuelto por SmartPot-API. Es un ToolError para que el mensaje en español de la API llegue al modelo
-    (el SDK oculta el texto de cualquier otra excepción)."""
+    """Error returned by SmartPot-API. Inherits from ToolError so the API message reaches the model
+    (the SDK hides the text of any other exception)."""
 
     def __init__(self, status_code: int, message: str) -> None:
         super().__init__(message)
@@ -26,7 +25,7 @@ class SmartPotAPIError(ToolError):
 
 
 class SmartPotClient:
-    """Pool HTTP compartido hacia la API; `for_token` da la vista de una persona."""
+    """Shared HTTP pool toward the API; `for_token` returns a user-scoped view."""
 
     def __init__(
         self,
@@ -71,8 +70,8 @@ class SmartPotClient:
         try:
             resp = await self._http().request(method, path, params=params, json=json_body, headers=headers)
         except httpx.HTTPError as exc:
-            logger.error("Fallo de red con SmartPot-API en %s %s: %s", method, path, type(exc).__name__)
-            raise SmartPotAPIError(503, "SmartPot-API no está disponible") from exc
+            logger.error("Network error calling SmartPot-API on %s %s: %s", method, path, type(exc).__name__)
+            raise SmartPotAPIError(503, "SmartPot-API is unavailable") from exc
         if resp.is_error:
             raise SmartPotAPIError(resp.status_code, _error_message(resp))
         if resp.status_code == 204 or not resp.content:
@@ -88,7 +87,7 @@ class SmartPotClient:
 
 
 class UserAPI:
-    """Las operaciones de la API en nombre de una persona (su token de conexión)."""
+    """API operations executed on behalf of a user (using their connection token)."""
 
     def __init__(self, client: SmartPotClient, token: str) -> None:
         self._client = client
@@ -208,7 +207,7 @@ def _error_message(resp: httpx.Response) -> str:
     try:
         body = resp.json()
     except ValueError:
-        return f"SmartPot-API respondió HTTP {resp.status_code}"
+        return f"SmartPot-API returned HTTP {resp.status_code}"
     if isinstance(body, dict):
-        return str(body.get("message") or body.get("error") or f"SmartPot-API respondió HTTP {resp.status_code}")
-    return f"SmartPot-API respondió HTTP {resp.status_code}"
+        return str(body.get("message") or body.get("error") or f"SmartPot-API returned HTTP {resp.status_code}")
+    return f"SmartPot-API returned HTTP {resp.status_code}"

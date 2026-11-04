@@ -1,7 +1,7 @@
-"""Herramientas MCP de SmartPot, registradas con el decorador `@mcp.tool()`.
+"""SmartPot MCP tools registered via the `@mcp.tool()` decorator.
 
-Cada herramienta declara anotaciones (solo lectura, destructiva, idempotente) para que el cliente MCP pida
-confirmación antes de acciones con efecto físico o irreversible.
+Each tool declares annotations (read-only, destructive, idempotent) so the MCP client prompts for
+confirmation before executing actions with physical or irreversible effects.
 """
 
 from typing import Annotated, Any, Literal
@@ -22,9 +22,9 @@ ActuatorType = Literal["WATER_PUMP", "UV_LIGHT", "FAN", "HUMIDIFIER", "NUTRIENT_
 Action = Literal["ACTIVATE", "DEACTIVATE"]
 Metric = Literal["temperature", "humidity", "brightness", "ph", "tds", "soilMoisture", "atmosphere"]
 
-ObjectId = Annotated[str, Field(pattern=r"^[0-9a-fA-F]{24}$", description="Identificador de 24 caracteres hex")]
-Hours = Annotated[int, Field(ge=1, le=168, description="Ventana en horas (1 a 168)")]
-Duration = Annotated[int, Field(ge=1, le=3600, description="Duración en segundos (1 a 3600)")]
+ObjectId = Annotated[str, Field(pattern=r"^[0-9a-fA-F]{24}$", description="24-character hexadecimal identifier")]
+Hours = Annotated[int, Field(ge=1, le=168, description="Window in hours (1 to 168)")]
+Duration = Annotated[int, Field(ge=1, le=3600, description="Duration in seconds (1 to 3600)")]
 
 READ = ToolAnnotations(read_only_hint=True, idempotent_hint=True, open_world_hint=False)
 WRITE = ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=False, open_world_hint=False)
@@ -49,29 +49,29 @@ def _placement(
 
 
 def register_tools(mcp: MCPServer, client: SmartPotClient) -> None:
-    """Registra las herramientas sobre el cliente de la API."""
+    """Registers all MCP tools on the API client."""
 
     # ---------------------------------------------------------------- Cuenta
 
-    @mcp.tool(name="get_account", title="Cuenta conectada", annotations=READ)
+    @mcp.tool(name="get_account", title="Connected account", annotations=READ)
     async def get_account(ctx: Context) -> dict[str, Any]:
-        """Nombre y correo de la cuenta de SmartPot a la que pertenece esta conexión."""
+        """Returns the name and email of the SmartPot account that owns this connection."""
         me = await user_api(client, ctx).me()
         return {k: me.get(k) for k in ("id", "name", "lastName", "email") if isinstance(me, dict)}
 
     # ---------------------------------------------------------------- Cultivos
 
-    @mcp.tool(name="list_crops", title="Listar cultivos", annotations=READ)
+    @mcp.tool(name="list_crops", title="List crops", annotations=READ)
     async def list_crops(ctx: Context) -> list[dict[str, Any]]:
-        """Lista los cultivos de la cuenta con tipo, forma, salud, estado del dispositivo y última lectura."""
+        """Lists the account's crops with species, form, health, device status, and latest reading."""
         return await user_api(client, ctx).list_crops()
 
-    @mcp.tool(name="get_crop", title="Ver un cultivo", annotations=READ)
+    @mcp.tool(name="get_crop", title="Get crop", annotations=READ)
     async def get_crop(ctx: Context, crop_id: ObjectId) -> dict[str, Any]:
-        """Devuelve el detalle de un cultivo: lugar, automatización, salud y última lectura."""
+        """Returns detailed information for a crop: placement, automation, health, and latest reading."""
         return await user_api(client, ctx).get_crop(crop_id)
 
-    @mcp.tool(name="create_crop", title="Crear un cultivo", annotations=WRITE)
+    @mcp.tool(name="create_crop", title="Create crop", annotations=WRITE)
     async def create_crop(
         ctx: Context,
         name: Annotated[str, Field(min_length=2, max_length=60)],
@@ -86,8 +86,8 @@ def register_tools(mcp: MCPServer, client: SmartPotClient) -> None:
         virtual_mode: Literal["AUTO", "MANUAL", "WEATHER"] = "AUTO",
         virtual_interval_seconds: Annotated[int, Field(ge=5, le=3600)] = 15,
     ) -> dict[str, Any]:
-        """Crea un cultivo. VIRTUAL lo alimenta el simulador; REAL devuelve una sola vez las credenciales MQTT
-        del dispositivo, que el servidor oculta al modelo."""
+        """Creates a crop. VIRTUAL is fed by the simulator; REAL returns one-time device MQTT credentials,
+        which the server redacts from the model."""
         payload: dict[str, Any] = {"name": name, "type": crop_type, "kind": kind}
         if form:
             payload["form"] = form
@@ -98,10 +98,10 @@ def register_tools(mcp: MCPServer, client: SmartPotClient) -> None:
             payload["virtual"] = {"mode": virtual_mode, "intervalSeconds": virtual_interval_seconds}
         created = await user_api(client, ctx).create_crop(payload)
         if isinstance(created, dict) and created.get("device"):
-            created["device"] = {"note": "Credenciales entregadas: consúltalas en la PWA, no se exponen por MCP"}
+            created["device"] = {"note": "Credentials issued: view them in the PWA, never exposed via MCP"}
         return created
 
-    @mcp.tool(name="update_crop", title="Editar un cultivo", annotations=IDEMPOTENT)
+    @mcp.tool(name="update_crop", title="Update crop", annotations=IDEMPOTENT)
     async def update_crop(
         ctx: Context,
         crop_id: ObjectId,
@@ -114,7 +114,7 @@ def register_tools(mcp: MCPServer, client: SmartPotClient) -> None:
         latitude: Annotated[float, Field(ge=-90, le=90)] | None = None,
         longitude: Annotated[float, Field(ge=-180, le=180)] | None = None,
     ) -> dict[str, Any]:
-        """Cambia nombre, tipo, forma o lugar del cultivo. Los campos omitidos conservan su valor actual."""
+        """Updates crop name, species, form, or placement. Omitted fields keep their current value."""
         current = await user_api(client, ctx).get_crop(crop_id)
         payload: dict[str, Any] = {
             "name": name or current.get("name"),
@@ -126,46 +126,46 @@ def register_tools(mcp: MCPServer, client: SmartPotClient) -> None:
             payload["placement"] = placement
         return await user_api(client, ctx).update_crop(crop_id, payload)
 
-    @mcp.tool(name="delete_crop", title="Eliminar un cultivo", annotations=DESTRUCTIVE)
+    @mcp.tool(name="delete_crop", title="Delete crop", annotations=DESTRUCTIVE)
     async def delete_crop(ctx: Context, crop_id: ObjectId) -> dict[str, str]:
-        """Elimina el cultivo con sus lecturas, comandos, actuadores y avisos. No se puede deshacer."""
+        """Deletes the crop along with its readings, commands, actuators, and notifications. Irreversible."""
         await user_api(client, ctx).delete_crop(crop_id)
         return {"status": "DELETED", "cropId": crop_id}
 
-    @mcp.tool(name="set_crop_automation", title="Activar o pausar el automático", annotations=IDEMPOTENT)
+    @mcp.tool(name="set_crop_automation", title="Enable or pause automation", annotations=IDEMPOTENT)
     async def set_crop_automation(ctx: Context, crop_id: ObjectId, enabled: bool) -> Any:
-        """Activa o pausa el agente que acciona los actuadores del cultivo según la IA."""
+        """Enables or pauses the autonomous agent that triggers crop actuators based on AI recommendations."""
         return await user_api(client, ctx).set_automation(crop_id, enabled)
 
-    @mcp.tool(name="get_crop_weather", title="Clima del cultivo", annotations=READ)
+    @mcp.tool(name="get_crop_weather", title="Crop weather", annotations=READ)
     async def get_crop_weather(ctx: Context, crop_id: ObjectId) -> Any:
-        """Clima actual del lugar del cultivo (requiere que el cultivo tenga ubicación)."""
+        """Current weather at the crop's location (requires the crop to have coordinates configured)."""
         return await user_api(client, ctx).crop_weather(crop_id)
 
     # ---------------------------------------------------------------- Lecturas
 
-    @mcp.tool(name="get_latest_reading", title="Última lectura", annotations=READ)
+    @mcp.tool(name="get_latest_reading", title="Latest reading", annotations=READ)
     async def get_latest_reading(ctx: Context, crop_id: ObjectId) -> dict[str, Any]:
-        """Última lectura: temperatura, humedad, luz, pH, TDS, presión y humedad del sustrato."""
+        """Latest reading: temperature, humidity, light, pH, TDS, atmospheric pressure, and substrate moisture."""
         return await user_api(client, ctx).latest_reading(crop_id)
 
-    @mcp.tool(name="get_readings_history", title="Historial de lecturas", annotations=READ)
+    @mcp.tool(name="get_readings_history", title="Readings history", annotations=READ)
     async def get_readings_history(
         ctx: Context,
         crop_id: ObjectId,
-        from_time: Annotated[str, Field(description="Inicio RFC 3339, p. ej. 2026-10-31T00:00:00Z")] | None = None,
-        to_time: Annotated[str, Field(description="Fin RFC 3339")] | None = None,
+        from_time: Annotated[str, Field(description="RFC 3339 start, e.g. 2026-10-31T00:00:00Z")] | None = None,
+        to_time: Annotated[str, Field(description="RFC 3339 end")] | None = None,
         limit: Annotated[int, Field(ge=1)] = 100,
     ) -> list[dict[str, Any]]:
-        """Lecturas del cultivo en un rango de fechas, de la más reciente a la más antigua."""
+        """Crop readings within a date range, ordered from newest to oldest."""
         return await user_api(client, ctx).readings(crop_id, from_time, to_time, min(limit, settings.max_rows))
 
-    @mcp.tool(name="get_readings_summary", title="Resumen de lecturas", annotations=READ)
+    @mcp.tool(name="get_readings_summary", title="Readings summary", annotations=READ)
     async def get_readings_summary(ctx: Context, crop_id: ObjectId, hours: Hours = 24) -> dict[str, Any]:
-        """Mínimo, promedio y máximo de cada variable en las últimas horas."""
+        """Minimum, average, and maximum of each variable over the last N hours."""
         return await user_api(client, ctx).readings_summary(crop_id, hours)
 
-    @mcp.tool(name="record_reading", title="Registrar una lectura manual", annotations=WRITE)
+    @mcp.tool(name="record_reading", title="Record manual reading", annotations=WRITE)
     async def record_reading(
         ctx: Context,
         crop_id: ObjectId,
@@ -177,7 +177,7 @@ def register_tools(mcp: MCPServer, client: SmartPotClient) -> None:
         atmosphere: Annotated[float, Field(ge=0)] | None = None,
         soil_moisture: Annotated[float, Field(ge=0, le=100)] | None = None,
     ) -> dict[str, Any]:
-        """Registra una medición tomada a mano (al menos una variable)."""
+        """Records a manually measured reading (at least one variable required)."""
         measures = {
             k: v
             for k, v in {
@@ -192,24 +192,24 @@ def register_tools(mcp: MCPServer, client: SmartPotClient) -> None:
             if v is not None
         }
         if not measures:
-            raise ValueError("Indica al menos una variable medida")
+            raise ValueError("Provide at least one measured variable")
         return await user_api(client, ctx).record_reading(crop_id, measures)
 
     # ---------------------------------------------------------------- Actuadores y comandos
 
-    @mcp.tool(name="list_actuators", title="Actuadores del cultivo", annotations=READ)
+    @mcp.tool(name="list_actuators", title="Crop actuators", annotations=READ)
     async def list_actuators(ctx: Context, crop_id: ObjectId) -> list[dict[str, Any]]:
-        """Actuadores del cultivo (bomba, luz UV, ventilador, humidificador, dosificadores) y si están encendidos."""
+        """Lists the crop's actuators (pump, UV light, fan, humidifier, dosers) and whether they are active."""
         return await user_api(client, ctx).actuators(crop_id)
 
-    @mcp.tool(name="send_actuator_command", title="Accionar un actuador", annotations=PHYSICAL)
+    @mcp.tool(name="send_actuator_command", title="Trigger actuator", annotations=PHYSICAL)
     async def send_actuator_command(
         ctx: Context, crop_id: ObjectId, actuator_id: ObjectId, action: Action, duration_seconds: Duration | None = None
     ) -> dict[str, Any]:
-        """Enciende o apaga un actuador por MQTT. Mueve hardware real en cultivos REAL: confirma antes."""
+        """Turns an actuator on or off over MQTT. Drives physical hardware on REAL crops: confirm first."""
         return await user_api(client, ctx).send_command(crop_id, actuator_id, action, duration_seconds)
 
-    @mcp.tool(name="send_bulk_command", title="Accionar varios cultivos", annotations=PHYSICAL)
+    @mcp.tool(name="send_bulk_command", title="Trigger multiple crops", annotations=PHYSICAL)
     async def send_bulk_command(
         ctx: Context,
         crop_ids: Annotated[list[ObjectId], Field(min_length=1, max_length=50)],
@@ -217,63 +217,63 @@ def register_tools(mcp: MCPServer, client: SmartPotClient) -> None:
         action: Action,
         duration_seconds: Duration | None = None,
     ) -> dict[str, Any]:
-        """Acciona el mismo tipo de actuador en varios cultivos; devuelve enviados, omitidos y fallidos."""
+        """Triggers the same actuator type across multiple crops; returns sent, skipped, and failed items."""
         return await user_api(client, ctx).send_bulk_command(crop_ids, actuator_type, action, duration_seconds)
 
-    @mcp.tool(name="list_commands", title="Historial de comandos", annotations=READ)
+    @mcp.tool(name="list_commands", title="Command history", annotations=READ)
     async def list_commands(
         ctx: Context, crop_id: ObjectId, limit: Annotated[int, Field(ge=1, le=200)] = 30
     ) -> list[dict[str, Any]]:
-        """Comandos recientes del cultivo con su estado (PENDING, SENT, EXECUTED, FAILED, EXPIRED) y origen."""
+        """Recent commands for the crop with status (PENDING, SENT, EXECUTED, FAILED, EXPIRED) and source."""
         return await user_api(client, ctx).crop_commands(crop_id, limit)
 
     # ---------------------------------------------------------------- IA
 
-    @mcp.tool(name="get_crop_insights", title="Diagnóstico de la IA", annotations=READ)
+    @mcp.tool(name="get_crop_insights", title="AI diagnosis", annotations=READ)
     async def get_crop_insights(ctx: Context, crop_id: ObjectId) -> dict[str, Any]:
-        """Diagnóstico de SmartPot-AI: índice de salud 0-100, conclusiones, acciones sugeridas y pronóstico."""
+        """SmartPot-AI diagnosis: 0-100 health index, conclusions, suggested actions, and forecast."""
         return await user_api(client, ctx).insights(crop_id)
 
-    @mcp.tool(name="get_crop_profiles", title="Perfiles de cultivo", annotations=READ)
+    @mcp.tool(name="get_crop_profiles", title="Crop profiles", annotations=READ)
     async def get_crop_profiles() -> Any:
-        """Rangos óptimos recomendados por tipo de cultivo."""
+        """Recommended optimal ranges per crop species."""
         return await client.crop_profiles()
 
-    @mcp.tool(name="get_learning_status", title="Estado del aprendizaje", annotations=READ)
+    @mcp.tool(name="get_learning_status", title="Learning status", annotations=READ)
     async def get_learning_status(ctx: Context) -> Any:
-        """Estado del aprendizaje continuo de la IA (muestras y versión de modelos)."""
+        """Continuous AI learning status (sample counts and model versions)."""
         return await user_api(client, ctx).learning_status()
 
     # ---------------------------------------------------------------- Panel general
 
-    @mcp.tool(name="get_overview", title="Panel general", annotations=READ)
+    @mcp.tool(name="get_overview", title="General overview", annotations=READ)
     async def get_overview(ctx: Context) -> dict[str, Any]:
-        """Resumen de la cuenta: cultivos, salud, dispositivos en línea, comandos y avisos."""
+        """Account summary: crops, health, online devices, commands, and notifications."""
         return await user_api(client, ctx).overview()
 
-    @mcp.tool(name="get_metric_series", title="Serie de una variable", annotations=READ)
+    @mcp.tool(name="get_metric_series", title="Metric time series", annotations=READ)
     async def get_metric_series(ctx: Context, metric: Metric = "temperature", hours: Hours = 24) -> dict[str, Any]:
-        """Promedios por intervalo de una variable para todos los cultivos (agregados de TimescaleDB)."""
+        """Interval averages of a metric across all crops (TimescaleDB aggregates)."""
         return await user_api(client, ctx).series(metric, hours)
 
-    @mcp.tool(name="get_fleet", title="Análisis de la flota", annotations=READ)
+    @mcp.tool(name="get_fleet", title="Fleet analysis", annotations=READ)
     async def get_fleet(ctx: Context) -> Any:
-        """Comparativa de todos los cultivos de la cuenta."""
+        """Cross-crop comparison across all crops in the account."""
         return await user_api(client, ctx).fleet()
 
     # ---------------------------------------------------------------- Notificaciones
 
-    @mcp.tool(name="list_notifications", title="Notificaciones", annotations=READ)
+    @mcp.tool(name="list_notifications", title="Notifications", annotations=READ)
     async def list_notifications(ctx: Context) -> Any:
-        """Avisos de la cuenta (alertas de la IA, comandos, dispositivos)."""
+        """Account notifications (AI alerts, commands, device events)."""
         return await user_api(client, ctx).notifications()
 
-    @mcp.tool(name="get_unread_count", title="Avisos sin leer", annotations=READ)
+    @mcp.tool(name="get_unread_count", title="Unread notification count", annotations=READ)
     async def get_unread_count(ctx: Context) -> Any:
-        """Cantidad de notificaciones sin leer."""
+        """Number of unread notifications."""
         return await user_api(client, ctx).unread_count()
 
-    @mcp.tool(name="mark_notification_read", title="Marcar aviso como leído", annotations=IDEMPOTENT)
+    @mcp.tool(name="mark_notification_read", title="Mark notification as read", annotations=IDEMPOTENT)
     async def mark_notification_read(ctx: Context, notification_id: ObjectId) -> Any:
-        """Marca una notificación como leída."""
+        """Marks a notification as read."""
         return await user_api(client, ctx).mark_read(notification_id)

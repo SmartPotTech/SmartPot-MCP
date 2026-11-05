@@ -25,7 +25,10 @@ class Settings(BaseSettings):
 
     # Protección contra DNS rebinding del transporte HTTP: Host y Origin permitidos (separados por comas).
     allowed_hosts: str = Field(default="localhost:*,127.0.0.1:*", alias="MCP_ALLOWED_HOSTS")
-    allowed_origins: str = Field(default="http://localhost:*,http://127.0.0.1:*", alias="MCP_ALLOWED_ORIGINS")
+    allowed_origins: str = Field(
+        default="http://localhost:*,http://127.0.0.1:*,https://smartpot.app,https://www.smartpot.app",
+        alias="MCP_ALLOWED_ORIGINS",
+    )
 
     # Límite de filas que una herramienta puede traer de una vez (protege el contexto del modelo).
     max_rows: int = Field(default=500, alias="MCP_MAX_ROWS")
@@ -34,7 +37,16 @@ class Settings(BaseSettings):
 
     @staticmethod
     def split(raw: str) -> list[str]:
-        return [item.strip() for item in raw.split(",") if item.strip()]
+        items = [item.strip() for item in raw.split(",") if item.strip()]
+        result: list[str] = []
+        for item in items:
+            if item not in result:
+                result.append(item)
+            if item.endswith(":*"):
+                base = item[:-2]
+                if base and base not in result:
+                    result.append(base)
+        return result
 
 
 settings = Settings()

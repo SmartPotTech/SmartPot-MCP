@@ -5,6 +5,7 @@ import sys
 import uvicorn
 from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
+from starlette.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp
 
 from app.core.config import settings
@@ -28,7 +29,14 @@ def build_http_app(server: MCPServer | None = None) -> ASGIApp:
             allowed_origins=settings.split(settings.allowed_origins),
         ),
     )
-    return ConnectionTokenMiddleware(app)
+    app = ConnectionTokenMiddleware(app)
+    return CORSMiddleware(
+        app,
+        allow_origins=["*"],
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_headers=["*"],
+        expose_headers=["*"],
+    )
 
 
 # Aplicación ASGI para uvicorn (contenedor).

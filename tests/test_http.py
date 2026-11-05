@@ -54,3 +54,25 @@ def test_unknown_host_is_rejected(http):
         "/mcp", headers={**HEADERS, "Authorization": f"Bearer {TOKEN_ANA}", "Host": "attacker.example"}, content="{}"
     )
     assert resp.status_code in (400, 403, 421)
+
+
+def test_host_without_port_is_accepted_for_allowed_wildcard(http):
+    resp = http.post(
+        "/mcp",
+        headers={**HEADERS, "Authorization": f"Bearer {TOKEN_ANA}", "Host": "localhost"},
+        content=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}),
+    )
+    assert resp.status_code == 200
+
+
+def test_cors_preflight_options(http):
+    resp = http.options(
+        "/mcp",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "authorization,content-type",
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.headers.get("access-control-allow-origin") == "*"

@@ -40,4 +40,6 @@ def create_mcp_server(client: SmartPotClient | None = None) -> MCPServer:
     register_tools(mcp, api_client)
     register_resources(mcp, api_client)
     register_prompts(mcp)
+    # El middleware HTTP reutiliza el mismo pool para validar los tokens de conexión.
+    mcp.smartpot_client = api_client
     return mcp

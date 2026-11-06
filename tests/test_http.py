@@ -2,10 +2,14 @@
 
 import json
 
+import httpx
 import pytest
 from starlette.testclient import TestClient
 
+from app.client.api_client import SmartPotClient
+from app.core.config import settings
 from app.main import build_http_app
+from app.server.mcp_server import create_mcp_server
 from tests.conftest import TOKEN_ANA, TOKEN_LUIS
 
 HEADERS = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
@@ -17,11 +21,23 @@ def http(mcp_server):
         yield client
 
 
-def _call(http: TestClient, token: str | None, tool: str, arguments: dict | None = None):
+def _call(http: TestClient, token: str | None, tool: str, arguments: dict | None = None, host: str | None = None):
     headers = dict(HEADERS)
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    if host:
+        headers["Host"] = host
     body = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": tool, "arguments": arguments or {}}}
+    return http.post("/mcp", headers=headers, content=json.dumps(body))
+
+
+def _list(http: TestClient, token: str | None, host: str | None = None):
+    headers = dict(HEADERS)
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    if host:
+        headers["Host"] = host
+    body = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
     return http.post("/mcp", headers=headers, content=json.dumps(body))
 
 
@@ -49,6 +65,32 @@ def test_each_request_uses_its_own_account(http, fake_api):
     assert tokens == [TOKEN_ANA, TOKEN_LUIS]
 
 
+def test_fabricated_well_formed_token_is_rejected_on_tools_list(http, fake_api):
+    fabricated = "spt_" + "z" * 43
+    resp = _list(http, fabricated)
+    assert resp.status_code == 401
+    assert "invalid or has been revoked" in resp.json()["error"]
+    assert any(path == "/api/v1/users/me" and token == fabricated for _, path, token in fake_api.seen)
+
+
+def test_token_validation_is_cached_for_the_short_ttl(http, fake_api):
+    first = _list(http, TOKEN_ANA)
+    second = _list(http, TOKEN_ANA)
+    assert first.status_code == second.status_code == 200
+    validations = [entry for entry in fake_api.seen if entry[1] == "/api/v1/users/me"]
+    assert len(validations) == 1
+
+
+def test_token_cache_can_be_disabled(fake_api, monkeypatch):
+    monkeypatch.setattr(settings, "token_cache_seconds", 0.0)
+    client = SmartPotClient(base_url="http://api.test", transport=httpx.MockTransport(fake_api))
+    with TestClient(build_http_app(create_mcp_server(client)), base_url="http://localhost:8002") as http:
+        assert _list(http, TOKEN_ANA).status_code == 200
+        assert _list(http, TOKEN_ANA).status_code == 200
+    validations = [entry for entry in fake_api.seen if entry[1] == "/api/v1/users/me"]
+    assert len(validations) == 2
+
+
 def test_unknown_host_is_rejected(http):
     resp = http.post(
         "/mcp", headers={**HEADERS, "Authorization": f"Bearer {TOKEN_ANA}", "Host": "attacker.example"}, content="{}"
@@ -56,13 +98,13 @@ def test_unknown_host_is_rejected(http):
     assert resp.status_code in (400, 403, 421)
 
 
-def test_host_without_port_is_accepted_for_allowed_wildcard(http):
-    resp = http.post(
-        "/mcp",
-        headers={**HEADERS, "Authorization": f"Bearer {TOKEN_ANA}", "Host": "localhost"},
-        content=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}),
-    )
-    assert resp.status_code == 200
+def test_host_parser_accepts_only_exact_authorities(http):
+    assert _list(http, TOKEN_ANA, host="localhost:28092").status_code == 200
+    assert _list(http, TOKEN_ANA, host="LOCALHOST:28092").status_code == 200
+    assert _list(http, TOKEN_ANA, host="[::1]:28092").status_code == 200
+    assert _list(http, TOKEN_ANA, host="localhost").status_code == 200
+    for host in ("localhost:99999", "localhost:28092.evil.example", "localhost:28092x", "localhost:"):
+        assert _list(http, TOKEN_ANA, host=host).status_code in (400, 403, 421), host
 
 
 def test_cors_preflight_options(http):
@@ -75,4 +117,18 @@ def test_cors_preflight_options(http):
         },
     )
     assert resp.status_code == 200
-    assert resp.headers.get("access-control-allow-origin") == "*"
+    assert resp.headers.get("access-control-allow-origin") == "http://localhost:5173"
+    assert resp.headers.get("access-control-allow-origin") != "*"
+
+
+def test_cors_rejects_an_unlisted_origin(http):
+    resp = http.options(
+        "/mcp",
+        headers={
+            "Origin": "https://evil.example",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "authorization,content-type",
+        },
+    )
+    assert resp.status_code == 400
+    assert "access-control-allow-origin" not in resp.headers

@@ -21,7 +21,7 @@ The server **does not have its own account**. Each user creates a connection tok
 | Read-only | Query crops, readings, diagnostics, overview dashboard, and notifications          |
 | Control   | Additionally create, edit, and delete crops, trigger actuators, and mark alerts    |
 
-The MCP client sends that token on every request (`Authorization: Bearer spt_…`) and the server forwards it to `SmartPot-API`, which enforces isolation: it only sees that account's crops and applies its scope. No connection can change the password, manage other connections, configure notification channels, or view device credentials. Revoking a connection in the PWA disconnects it immediately; the API stores only the SHA-256 digest of the token and records its last use.
+The MCP client sends that token on every request (`Authorization: Bearer spt_…`) and the server forwards it to `SmartPot-API`, which enforces isolation: it only sees that account's crops and applies its scope. No connection can change the password, manage other connections, configure notification channels, or view device credentials. Revoking a connection in the PWA takes effect within the 30-second positive/negative validation cache; the API stores only the SHA-256 digest of the token and records its last use. The MCP edge calls `GET /api/v1/users/me` with the connection token, caches the verdict by SHA-256 for 30 seconds (`MCP_TOKEN_CACHE_SECONDS`), and rejects fake or revoked tokens with `401` on every route, including `tools/list`.
 
 The HTTP transport is stateless across requests: each request is served in isolation using the token it carries.
 
@@ -118,11 +118,11 @@ uv run ruff check . && uv run ruff format --check .
 uv run pytest
 ```
 
-Tests mock the API and verify that each request arrives with the caller's token, that two accounts never mix, that missing tokens or session JWTs never reach the API, that a read-only connection cannot trigger actuators, and that device credentials are never exposed.
+Tests mock the API and verify that each request arrives with the caller's token, that two accounts never mix, that missing tokens or session JWTs never reach the API, that a fabricated well-formed `spt_` token is rejected on `tools/list`, that the 30-second cache avoids repeated validation calls, that read-only connections cannot trigger actuators, that deceptive Host/Origin values are rejected, and that device credentials are never exposed.
 
 ### Container Security
 
-Unprivileged user (`1000:1000`), read-only filesystem, all capabilities dropped, and DNS rebinding protection (`MCP_ALLOWED_HOSTS` and `MCP_ALLOWED_ORIGINS`).
+Unprivileged user (`1000:1000`), read-only filesystem, all capabilities dropped, strict `Host`/`Origin` parsing (`MCP_ALLOWED_HOSTS` and `MCP_ALLOWED_ORIGINS`; lowercase, exact authority, ports `1..65535`, IPv6), and an explicit CORS allowlist instead of `*`. `/health` stays public for probes.
 
 ### License
 
@@ -153,7 +153,7 @@ El servidor **no tiene cuenta propia**. Cada persona crea en la PWA, en **Perfil
 El cliente MCP envía ese token en cada petición (`Authorization: Bearer spt_…`) y el servidor lo reenvía a
 SmartPot-API, que decide: solo ve los cultivos de esa cuenta y aplica su alcance. Ninguna conexión puede cambiar la
 contraseña, administrar otras conexiones, configurar canales de aviso ni ver las credenciales de un dispositivo.
-Revocar la conexión en la PWA la corta al instante; la API guarda solo el SHA-256 del token y registra su último uso.
+Revocar la conexión en la PWA surte efecto dentro de la caché de validación de 30 segundos (positiva o negativa); la API guarda solo el SHA-256 del token y registra su último uso. El borde MCP llama `GET /api/v1/users/me` con el token de conexión, cachea el veredicto por SHA-256 durante 30 segundos (`MCP_TOKEN_CACHE_SECONDS`) y rechaza tokens falsos o revocados con `401` en todas las rutas, incluido `tools/list`.
 
 El transporte HTTP no guarda estado entre peticiones: cada una se atiende de forma aislada con el token que trae.
 
@@ -255,13 +255,16 @@ uv run pytest
 ```
 
 Las pruebas simulan la API y comprueban que cada petición llega con el token de quien llama, que dos cuentas no se
-mezclan, que sin token o con un JWT de sesión no se llega a la API, que una conexión de solo lectura no acciona y que
+mezclan, que sin token o con un JWT de sesión no se llega a la API, que un token `spt_` bien formado pero falso se
+rechaza en `tools/list`, que la caché de 30 segundos evita validaciones repetidas, que una conexión de solo lectura no
+acciona, que valores engañosos de Host/Origin se rechazan y que
 las credenciales del dispositivo no se exponen.
 
 ### Seguridad del contenedor
 
-Usuario sin privilegios (`1000:1000`), sistema de archivos de solo lectura, sin capacidades y protección contra DNS
-rebinding (`MCP_ALLOWED_HOSTS` y `MCP_ALLOWED_ORIGINS`).
+Usuario sin privilegios (`1000:1000`), sistema de archivos de solo lectura, sin capacidades, análisis estricto de
+`Host`/`Origin` (`MCP_ALLOWED_HOSTS` y `MCP_ALLOWED_ORIGINS`: minúsculas, autoridad exacta, puertos `1..65535`, IPv6)
+y lista CORS explícita en vez de `*`. `/health` sigue siendo público para los probes.
 
 ### Licencia
 

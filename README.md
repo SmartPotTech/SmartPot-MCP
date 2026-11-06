@@ -29,13 +29,13 @@ The HTTP transport is stateless across requests: each request is served in isola
 
 ### One-Command Deployment
 
-The image is public: `ghcr.io/smartpottech/smartpot-mcp`. It is included in the demo beta stack, which starts without cloning the code:
+The image is public: `ghcr.io/smartpottech/smartpot-mcp`. It is included in the demo environment, which starts without cloning the code:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SmartPotTech/.github/main/docker/demo-beta/compose.yaml | docker compose -f - up -d --wait
+curl -fsSL https://raw.githubusercontent.com/SmartPotTech/.github/main/docker/demo/compose.yaml | docker compose -f - up -d --wait
 ```
 
-The MCP server listens at `http://localhost:8002/mcp` (health check at `http://localhost:8002/health`). Sign in to the PWA at http://localhost:5173 with `demo@smartpot.app` / `SmartPot2026`, create a connection in **Profile › Connections**, and copy the displayed configuration.
+In the local demo, the MCP server listens at `http://localhost:8002/mcp` (health check at `http://localhost:8002/health`). In production, it is deployed at `https://mcp.smartpot.app/mcp` (internal port 8092). Sign in to the PWA at http://localhost:5173 with `demo@smartpot.app` / `SmartPot2026`, create a connection in **Profile › Connections**, and copy the displayed configuration.
 
 To run only this service pointing to an existing API:
 
@@ -161,14 +161,14 @@ El transporte HTTP no guarda estado entre peticiones: cada una se atiende de for
 
 ### Despliegue en un comando
 
-La imagen es pública: `ghcr.io/smartpottech/smartpot-mcp`. Viene incluida en la demo beta, que se levanta sin
+La imagen es pública: `ghcr.io/smartpottech/smartpot-mcp`. Viene incluida en la demo local y en producción, y se levanta sin
 descargar el código:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SmartPotTech/.github/main/docker/demo-beta/compose.yaml | docker compose -f - up -d --wait
+curl -fsSL https://raw.githubusercontent.com/SmartPotTech/.github/main/docker/demo/compose.yaml | docker compose -f - up -d --wait
 ```
 
-El servidor MCP queda en `http://localhost:8002/mcp` (salud en `http://localhost:8002/health`). Ingresa a la PWA en
+En la demo local, el servidor MCP queda en `http://localhost:8002/mcp` (salud en `http://localhost:8002/health`). En producción, se despliega en `https://mcp.smartpot.app/mcp` (puerto interno 8092). Ingresa a la PWA en
 http://localhost:5173 con `demo@smartpot.app` / `SmartPot2026`, crea una conexión en **Perfil › Conexiones** y copia
 la configuración que muestra.
 

@@ -34,7 +34,10 @@ def build_http_app(server: MCPServer | None = None, client: SmartPotClient | Non
         # compara prefijos y aceptaría hosts como `localhost:99999`.
         transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
     )
-    app = ConnectionTokenMiddleware(app, TokenValidator(api_client, settings.token_cache_seconds))
+    validator = TokenValidator(api_client, settings.token_cache_seconds)
+    if isinstance(api_client, SmartPotClient):
+        api_client.on_unauthorized = validator.invalidate
+    app = ConnectionTokenMiddleware(app, validator)
     app = AuthorityValidationMiddleware(
         app,
         settings.split(settings.allowed_hosts),

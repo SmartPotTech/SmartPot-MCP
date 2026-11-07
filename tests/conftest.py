@@ -1,5 +1,8 @@
 """Fixtures: simulated SmartPot-API recording which token accompanies each request."""
 
+import json
+from typing import Any
+
 import httpx
 import pytest
 
@@ -23,12 +26,24 @@ ACCOUNTS = {
 class FakeAPI:
     def __init__(self) -> None:
         self.seen: list[tuple[str, str, str | None]] = []
+        # Detalle completo (query y cuerpo) para comprobar el contrato HTTP de cada herramienta.
+        self.details: list[dict[str, Any]] = []
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         auth = request.headers.get("authorization")
         token = auth.removeprefix("Bearer ") if auth else None
         path, method = request.url.path, request.method
         self.seen.append((method, path, token))
+        raw = request.content
+        self.details.append(
+            {
+                "method": method,
+                "path": path,
+                "token": token,
+                "params": dict(request.url.params),
+                "body": json.loads(raw) if raw else None,
+            }
+        )
 
         if path == "/health":
             return httpx.Response(200, json={"status": "UP"})
@@ -49,6 +64,12 @@ class FakeAPI:
             return httpx.Response(200, json={"id": CROP, "name": "Lettuce", "type": "LETTUCE", "form": "NFT"})
         if path == f"/api/v1/crops/{CROP}/commands" and method == "POST":
             return httpx.Response(202, json={"id": "c1", "status": "PENDING"})
+        if path == f"/api/v1/crops/{CROP}/commands" and method == "GET":
+            return httpx.Response(200, json=[{"id": "c1", "status": "EXECUTED"}])
+        if path == f"/api/v1/crops/{CROP}/actuators":
+            return httpx.Response(200, json=[{"id": ACTUATOR, "type": "FAN", "active": False}])
+        if path == f"/api/v1/crops/{CROP}/readings" and method == "GET":
+            return httpx.Response(200, json=[{"temperature": 21.5, "soilMoisture": 60.0}])
         return httpx.Response(200, json={"ok": True})
 
 

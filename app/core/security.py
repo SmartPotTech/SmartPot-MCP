@@ -66,6 +66,10 @@ class TokenValidator:
         self._cache: dict[str, tuple[float, bool]] = {}
         self._lock = asyncio.Lock()
 
+    def invalidate(self, token: str) -> None:
+        """Drops a cached verdict after the API rejected the token (revoked or expired)."""
+        self._cache.pop(hashlib.sha256(token.encode("utf-8")).hexdigest(), None)
+
     async def valid(self, token: str) -> bool | None:
         if self.client is None:
             return None

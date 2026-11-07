@@ -4,6 +4,7 @@ The server has no service account of its own: each call uses the connected user'
 enforces their crops and selected scope (read-only or control). Tools never accept or return raw tokens.
 """
 
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -37,6 +38,8 @@ class SmartPotClient:
         self._timeout = timeout or settings.timeout_seconds
         self._transport = transport
         self._client: httpx.AsyncClient | None = None
+        # El middleware HTTP registra aquí la invalidación de la caché de tokens cuando la API responde 401.
+        self.on_unauthorized: Callable[[str], None] | None = None
 
     def _http(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -73,6 +76,10 @@ class SmartPotClient:
             logger.error("Network error calling SmartPot-API on %s %s: %s", method, path, type(exc).__name__)
             raise SmartPotAPIError(503, "SmartPot-API is unavailable") from exc
         if resp.is_error:
+            # Un 401 demuestra que el token dejó de ser válido (revocado o expirado): la caché no puede
+            # seguir aceptándolo durante el TTL restante.
+            if resp.status_code == 401 and token and self.on_unauthorized is not None:
+                self.on_unauthorized(token)
             raise SmartPotAPIError(resp.status_code, _error_message(resp))
         if resp.status_code == 204 or not resp.content:
             return None

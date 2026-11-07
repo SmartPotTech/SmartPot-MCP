@@ -7,6 +7,7 @@ confirmation before executing actions with physical or irreversible effects.
 from typing import Annotated, Any, Literal
 
 from mcp.server.mcpserver import Context, MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
@@ -192,7 +193,7 @@ def register_tools(mcp: MCPServer, client: SmartPotClient) -> None:
             if v is not None
         }
         if not measures:
-            raise ValueError("Provide at least one measured variable")
+            raise ToolError("Provide at least one measured variable")
         return await user_api(client, ctx).record_reading(crop_id, measures)
 
     # ---------------------------------------------------------------- Actuadores y comandos

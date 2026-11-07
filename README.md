@@ -124,6 +124,10 @@ Tests mock the API and verify that each request arrives with the caller's token,
 
 Unprivileged user (`1000:1000`), read-only filesystem, all capabilities dropped, strict `Host`/`Origin` parsing (`MCP_ALLOWED_HOSTS` and `MCP_ALLOWED_ORIGINS`; lowercase, exact authority, ports `1..65535`, IPv6), and an explicit CORS allowlist instead of `*`. `/health` stays public for probes.
 
+### Interactive Diagrams
+
+The [interactive diagrams](docs/diagrams/interactive/README.md#english) follow one tool call from the Host/Origin check to SmartPot-API, in English and Spanish, with links to the exact source lines.
+
 ### License
 
 MIT.
@@ -265,6 +269,10 @@ las credenciales del dispositivo no se exponen.
 Usuario sin privilegios (`1000:1000`), sistema de archivos de solo lectura, sin capacidades, análisis estricto de
 `Host`/`Origin` (`MCP_ALLOWED_HOSTS` y `MCP_ALLOWED_ORIGINS`: minúsculas, autoridad exacta, puertos `1..65535`, IPv6)
 y lista CORS explícita en vez de `*`. `/health` sigue siendo público para los probes.
+
+### Diagramas interactivos
+
+Los [diagramas interactivos](docs/diagrams/interactive/README.md#español) siguen una llamada a una herramienta desde la validación de Host/Origin hasta SmartPot-API, en español e inglés, con enlaces a las líneas exactas del código.
 
 ### Licencia
 

@@ -16,6 +16,46 @@ The HTTP edge validates the `spt_` format first, then calls `GET /api/v1/users/m
 
 CORS uses an explicit allowlist (exact origins plus a regex for wildcard ports), never `*`, with `allow_credentials=False` and explicit MCP headers.
 
+### Architecture & Security Diagram
+
+```mermaid
+flowchart LR
+  subgraph clients["AI Assistants & MCP Clients"]
+    claude["Claude Code / Desktop"]
+    inspector["MCP Inspector"]
+    agent["Autonomous AI Agents"]
+  end
+
+  subgraph proxy["Reverse Proxy & Edge Transport"]
+    nginx["Nginx Host Gateway<br/>https://mcp.smartpot.app<br/>Port 8092 · TLS 443 Termination"]
+  end
+
+  subgraph mcp_server["SmartPot-MCP Container (FastMCP · Python 3.13)"]
+    direction TB
+    host_guard["TransportSecurityMiddleware<br/>Host & Origin Header Validation<br/>Mitigates HTTP 421 Misdirected Requests"]
+    token_auth["ConnectionTokenMiddleware<br/>Bearer Authentication with spt_... Tokens<br/>Cached validation with 5-minute TTL"]
+    fastmcp["FastMCP Protocol Server (Pydantic 2.14.3)<br/>Exposes 25 Tools, 5 Resources, 3 Prompts<br/>Scopes: READ and CONTROL"]
+    host_guard --> token_auth --> fastmcp
+  end
+
+  subgraph api_backend["Application Engine"]
+    api["SmartPot-API (Go 1.27.3)<br/>GET /api/v1/auth/tokens/verify<br/>Validates token hash & permissions"]
+  end
+
+  claude & inspector & agent -->|"HTTPS Stream / SSE / POST /mcp"| nginx
+  nginx --> host_guard
+  token_auth <-->|"Token Verification"| api
+  fastmcp -->|"REST Calls with Scoped Token"| api
+
+  classDef core fill:#067A52,stroke:#0B3D2B,color:#FFFFFF
+  classDef leaf fill:#DDF5EA,stroke:#067A52,color:#17261F
+  classDef water fill:#E3F2FB,stroke:#1F6FA0,color:#17261F
+
+  class claude,inspector,agent water
+  class nginx,api core
+  class host_guard,token_auth,fastmcp leaf
+```
+
 <a id="español"></a>
 
 ## Español

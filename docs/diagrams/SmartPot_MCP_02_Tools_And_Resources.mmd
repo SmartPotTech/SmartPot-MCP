@@ -1,0 +1,38 @@
+%%{init: {"theme": "base", "fontFamily": "Segoe UI, Arial, sans-serif", "themeVariables": {"fontFamily": "Segoe UI, Arial, sans-serif", "fontSize": "15px", "primaryColor": "#DDF5EA", "primaryTextColor": "#17261F", "primaryBorderColor": "#067A52", "secondaryColor": "#E3F2FB", "secondaryTextColor": "#17261F", "secondaryBorderColor": "#1F6FA0", "tertiaryColor": "#F2F7F4", "tertiaryTextColor": "#17261F", "tertiaryBorderColor": "#D5E3DC", "lineColor": "#5B6B63", "textColor": "#17261F", "mainBkg": "#DDF5EA", "nodeBorder": "#067A52", "clusterBkg": "#F7FAF8", "clusterBorder": "#D5E3DC", "edgeLabelBackground": "#FFFFFF", "actorBkg": "#067A52", "actorBorder": "#0B3D2B", "actorTextColor": "#FFFFFF", "actorLineColor": "#5B6B63", "signalColor": "#17261F", "signalTextColor": "#17261F", "labelBoxBkgColor": "#0B3D2B", "labelBoxBorderColor": "#0B3D2B", "labelTextColor": "#FFFFFF", "loopTextColor": "#0B3D2B", "noteBkgColor": "#FDF4DD", "noteBorderColor": "#C98D12", "noteTextColor": "#17261F", "activationBkgColor": "#DDF5EA", "activationBorderColor": "#067A52", "attributeBackgroundColorOdd": "#FFFFFF", "attributeBackgroundColorEven": "#F2F7F4"}}}%%
+flowchart TB
+  subgraph capabilities["FastMCP Capabilities Map (25 Tools · 5 Resources · 3 Prompts)"]
+    direction TB
+    subgraph read_tools["READ Scope Tools (20 Tools)"]
+      t_crops["list_crops · get_crop · get_crop_health<br/>get_crop_environment · list_virtual_crops"]
+      t_readings["get_latest_reading · get_readings_history<br/>get_reading_aggregates · get_crop_kpis"]
+      t_actuators["list_actuators · get_actuator_state<br/>list_command_history · get_command_status"]
+      t_notif["list_notifications · get_unread_count<br/>get_alert_channels · get_system_status"]
+    end
+
+    subgraph control_tools["CONTROL Scope Tools (5 Tools)"]
+      t_act["trigger_actuator · trigger_actuator_timed<br/>emergency_stop_all · pause_virtual_crop · resume_virtual_crop"]
+    end
+
+    subgraph resources["Exposed Resources (5 Resources)"]
+      r_state["smartpot://crops/{id}/state<br/>smartpot://crops/{id}/telemetry<br/>smartpot://crops/{id}/actuators<br/>smartpot://system/topology<br/>smartpot://alerts/active"]
+    end
+
+    subgraph prompts["Context Prompts (3 Prompts)"]
+      p_diag["diagnose_crop_health<br/>investigate_telemetry_anomaly<br/>recommend_actuator_schedule"]
+    end
+  end
+
+  api["SmartPot-API (Endpoints)"]
+  read_tools -->|"GET queries"| api
+  control_tools -->|"POST commands"| api
+  resources -.->|"Snapshot fetch"| api
+
+  classDef leaf fill:#DDF5EA,stroke:#067A52,color:#17261F
+  classDef water fill:#E3F2FB,stroke:#1F6FA0,color:#17261F
+  classDef sun fill:#FDF4DD,stroke:#C98D12,color:#17261F
+  classDef core fill:#067A52,stroke:#0B3D2B,color:#FFFFFF
+
+  class read_tools,resources leaf
+  class control_tools sun
+  class prompts water
+  class api core

@@ -27,6 +27,48 @@ The HTTP transport is stateless across requests: each request is served in isola
 
 ---
 
+### Architecture & Capabilities Diagram
+
+```mermaid
+flowchart LR
+  subgraph clients["AI Assistants & MCP Clients"]
+    claude["Claude Code / Desktop"]
+    inspector["MCP Inspector"]
+    agent["Autonomous AI Agents"]
+  end
+
+  subgraph proxy["Reverse Proxy & Edge Transport"]
+    nginx["Nginx Host Gateway<br/>https://mcp.smartpot.app<br/>Port 8092 · TLS 443 Termination"]
+  end
+
+  subgraph mcp_server["SmartPot-MCP Container (FastMCP · Python 3.13)"]
+    direction TB
+    host_guard["TransportSecurityMiddleware<br/>Host & Origin Header Validation<br/>Mitigates HTTP 421 Misdirected Requests"]
+    token_auth["ConnectionTokenMiddleware<br/>Bearer Authentication with spt_... Tokens<br/>Cached validation with 5-minute TTL"]
+    fastmcp["FastMCP Protocol Server (Pydantic 2.14.3)<br/>Exposes 25 Tools, 5 Resources, 3 Prompts<br/>Scopes: READ and CONTROL"]
+    host_guard --> token_auth --> fastmcp
+  end
+
+  subgraph api_backend["Application Engine"]
+    api["SmartPot-API (Go 1.27.3)<br/>GET /api/v1/auth/tokens/verify<br/>Validates token hash & permissions"]
+  end
+
+  claude & inspector & agent -->|"HTTPS Stream / SSE / POST /mcp"| nginx
+  nginx --> host_guard
+  token_auth <-->|"Token Verification"| api
+  fastmcp -->|"REST Calls with Scoped Token"| api
+
+  classDef core fill:#067A52,stroke:#0B3D2B,color:#FFFFFF
+  classDef leaf fill:#DDF5EA,stroke:#067A52,color:#17261F
+  classDef water fill:#E3F2FB,stroke:#1F6FA0,color:#17261F
+
+  class claude,inspector,agent water
+  class nginx,api core
+  class host_guard,token_auth,fastmcp leaf
+```
+
+---
+
 ### One-Command Deployment
 
 The image is public: `ghcr.io/smartpottech/smartpot-mcp`. It is included in the demo environment, which starts without cloning the code:
@@ -160,6 +202,48 @@ contraseña, administrar otras conexiones, configurar canales de aviso ni ver la
 Revocar la conexión en la PWA surte efecto dentro de la caché de validación de 30 segundos (positiva o negativa); la API guarda solo el SHA-256 del token y registra su último uso. El borde MCP llama `GET /api/v1/users/me` con el token de conexión, cachea el veredicto por SHA-256 durante 30 segundos (`MCP_TOKEN_CACHE_SECONDS`) y rechaza tokens falsos o revocados con `401` en todas las rutas, incluido `tools/list`.
 
 El transporte HTTP no guarda estado entre peticiones: cada una se atiende de forma aislada con el token que trae.
+
+---
+
+### Diagrama de arquitectura y capacidades
+
+```mermaid
+flowchart LR
+  subgraph clients["AI Assistants & MCP Clients"]
+    claude["Claude Code / Desktop"]
+    inspector["MCP Inspector"]
+    agent["Autonomous AI Agents"]
+  end
+
+  subgraph proxy["Reverse Proxy & Edge Transport"]
+    nginx["Nginx Host Gateway<br/>https://mcp.smartpot.app<br/>Port 8092 · TLS 443 Termination"]
+  end
+
+  subgraph mcp_server["SmartPot-MCP Container (FastMCP · Python 3.13)"]
+    direction TB
+    host_guard["TransportSecurityMiddleware<br/>Host & Origin Header Validation<br/>Mitigates HTTP 421 Misdirected Requests"]
+    token_auth["ConnectionTokenMiddleware<br/>Bearer Authentication with spt_... Tokens<br/>Cached validation with 5-minute TTL"]
+    fastmcp["FastMCP Protocol Server (Pydantic 2.14.3)<br/>Exposes 25 Tools, 5 Resources, 3 Prompts<br/>Scopes: READ and CONTROL"]
+    host_guard --> token_auth --> fastmcp
+  end
+
+  subgraph api_backend["Application Engine"]
+    api["SmartPot-API (Go 1.27.3)<br/>GET /api/v1/auth/tokens/verify<br/>Validates token hash & permissions"]
+  end
+
+  claude & inspector & agent -->|"HTTPS Stream / SSE / POST /mcp"| nginx
+  nginx --> host_guard
+  token_auth <-->|"Token Verification"| api
+  fastmcp -->|"REST Calls with Scoped Token"| api
+
+  classDef core fill:#067A52,stroke:#0B3D2B,color:#FFFFFF
+  classDef leaf fill:#DDF5EA,stroke:#067A52,color:#17261F
+  classDef water fill:#E3F2FB,stroke:#1F6FA0,color:#17261F
+
+  class claude,inspector,agent water
+  class nginx,api core
+  class host_guard,token_auth,fastmcp leaf
+```
 
 ---
 

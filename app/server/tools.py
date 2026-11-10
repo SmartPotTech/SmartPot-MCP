@@ -13,6 +13,7 @@ from pydantic import Field
 
 from app.client.api_client import SmartPotClient
 from app.core.config import settings
+from app.core.logging import logger
 from app.server.auth import user_api
 
 CropType = Literal["TOMATO", "LETTUCE", "STRAWBERRY", "BASIL", "SPINACH", "PEPPER"]
@@ -129,8 +130,13 @@ def register_tools(mcp: MCPServer, client: SmartPotClient) -> None:
 
     @mcp.tool(name="delete_crop", title="Delete crop", annotations=DESTRUCTIVE)
     async def delete_crop(ctx: Context, crop_id: ObjectId) -> dict[str, str]:
-        """Deletes the crop along with its readings, commands, actuators, and notifications. Irreversible."""
+        """Permanently deletes a crop and triggers cascade deletion of all historical readings,
+        commands, actuators, alerts, and broker credentials. This operation is irreversible.
+        Client confirmation with DESTRUCTIVE annotation is required before execution.
+        """
+        logger.warning("AUDIT: Destructive action delete_crop invoked for crop %s", crop_id)
         await user_api(client, ctx).delete_crop(crop_id)
+        logger.info("AUDIT: Crop %s successfully deleted via MCP tool", crop_id)
         return {"status": "DELETED", "cropId": crop_id}
 
     @mcp.tool(name="set_crop_automation", title="Enable or pause automation", annotations=IDEMPOTENT)
@@ -217,6 +223,13 @@ def register_tools(mcp: MCPServer, client: SmartPotClient) -> None:
         ctx: Context, crop_id: ObjectId, actuator_id: ObjectId, action: Action, duration_seconds: Duration | None = None
     ) -> dict[str, Any]:
         """Turns an actuator on or off over MQTT. Drives physical hardware on REAL crops: confirm first."""
+        logger.info(
+            "AUDIT: Physical actuator command %s on %s for crop %s (duration=%s)",
+            action,
+            actuator_id,
+            crop_id,
+            duration_seconds,
+        )
         return await user_api(client, ctx).send_command(crop_id, actuator_id, action, duration_seconds)
 
     @mcp.tool(name="send_bulk_command", title="Trigger multiple crops", annotations=PHYSICAL)
@@ -228,6 +241,7 @@ def register_tools(mcp: MCPServer, client: SmartPotClient) -> None:
         duration_seconds: Duration | None = None,
     ) -> dict[str, Any]:
         """Triggers the same actuator type across multiple crops; returns sent, skipped, and failed items."""
+        logger.info("AUDIT: Physical bulk command %s on %s across %d crops", action, actuator_type, len(crop_ids))
         return await user_api(client, ctx).send_bulk_command(crop_ids, actuator_type, action, duration_seconds)
 
     @mcp.tool(name="list_commands", title="Command history", annotations=READ)

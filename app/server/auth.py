@@ -20,9 +20,10 @@ def connection_token(ctx: Context | None) -> str:
         try:
             headers = ctx.headers
         except ValueError:
-            # Fuera de una petición (llamadas directas en pruebas o stdio sin cabeceras).
+            # Fuera de una petición HTTP (llamadas directas en pruebas o transporte stdio sin contexto HTTP).
             headers = None
-    token = bearer_from_headers(headers) or settings.api_token
+    # En transporte HTTP se exige siempre cabecera Authorization: Bearer explícita; en stdio se usa el de entorno.
+    token = bearer_from_headers(headers) if headers is not None else settings.api_token
     if not is_connection_token(token):
         raise ToolError(MISSING_TOKEN)
     return token

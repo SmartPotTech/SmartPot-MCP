@@ -178,7 +178,10 @@ def register_tools(mcp: MCPServer, client: SmartPotClient) -> None:
         atmosphere: Annotated[float, Field(ge=0)] | None = None,
         soil_moisture: Annotated[float, Field(ge=0, le=100)] | None = None,
     ) -> dict[str, Any]:
-        """Records a manually measured reading (at least one variable required)."""
+        """Records a manually measured reading on a virtual crop (at least one variable required).
+
+        Manual readings are only allowed for virtual crops; real physical crops receive telemetry exclusively via MQTT.
+        """
         measures = {
             k: v
             for k, v in {
@@ -194,7 +197,13 @@ def register_tools(mcp: MCPServer, client: SmartPotClient) -> None:
         }
         if not measures:
             raise ToolError("Provide at least one measured variable")
-        return await user_api(client, ctx).record_reading(crop_id, measures)
+        api = user_api(client, ctx)
+        crop = await api.get_crop(crop_id)
+        if crop.get("kind") == "REAL":
+            raise ToolError(
+                "Manual readings are only allowed for virtual crops; real physical crops receive telemetry via MQTT"
+            )
+        return await api.record_reading(crop_id, measures)
 
     # ---------------------------------------------------------------- Actuadores y comandos
 

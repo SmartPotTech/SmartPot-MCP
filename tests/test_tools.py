@@ -5,6 +5,7 @@ import json
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
+from app.client.api_client import UserAPI
 from tests.conftest import ACTUATOR, CROP, READ_ONLY, TOKEN_ANA
 
 NOTIFICATION = "66f5a1000000000000000301"
@@ -281,6 +282,16 @@ async def test_record_reading_needs_at_least_one_measure(mcp_server, fake_api, s
     with pytest.raises(ToolError, match="at least one measured variable"):
         await mcp_server.call_tool("record_reading", {"crop_id": CROP})
     assert fake_api.seen == []
+
+
+async def test_record_reading_rejects_real_crops(mcp_server, monkeypatch, stdio_token):
+    # Un cultivo real rechaza la inyección de lecturas manuales por API o MCP.
+    async def mock_get_crop(self, crop_id):
+        return {"id": crop_id, "name": "Real Lettuce", "kind": "REAL"}
+
+    monkeypatch.setattr(UserAPI, "get_crop", mock_get_crop)
+    with pytest.raises(ToolError, match="Manual readings are only allowed for virtual crops"):
+        await mcp_server.call_tool("record_reading", {"crop_id": CROP, "temperature": 22.0})
 
 
 @pytest.mark.parametrize(

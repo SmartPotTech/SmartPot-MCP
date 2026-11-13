@@ -27,6 +27,10 @@ def create_mcp_server(client: SmartPotClient | None = None) -> MCPServer:
         ),
     )
 
+    @mcp.custom_route("/livez", methods=["GET"])
+    async def liveness_endpoint(request: Request) -> JSONResponse:
+        return JSONResponse({"status": "UP", "service": "smartpot-mcp"})
+
     @mcp.custom_route("/health", methods=["GET"])
     async def health_endpoint(request: Request) -> JSONResponse:
         try:

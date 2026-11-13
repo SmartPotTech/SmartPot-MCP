@@ -72,7 +72,13 @@ def main() -> None:
     if transport == "stdio":
         mcp.run("stdio")
     elif transport == "streamable-http":
-        uvicorn.run(app, host=settings.host, port=settings.port, log_level=settings.log_level.lower())
+        uvicorn.run(
+            app,
+            host=settings.host,
+            port=settings.port,
+            log_level=settings.log_level.lower(),
+            timeout_keep_alive=75,
+        )
     else:
         logger.error("Unknown transport mode: %s", transport)
         sys.exit(1)

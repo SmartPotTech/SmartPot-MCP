@@ -236,3 +236,66 @@ def test_invalid_identifiers_do_not_change_the_api_path(http, fake_api):
         assert resp.status_code == 200
         assert field in resp.text
         assert all(".." not in path for _, path, _ in fake_api.seen)
+
+
+def test_livez_stays_up_without_touching_api():
+    called = False
+
+    def down(request: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        raise httpx.ConnectError("API down", request=request)
+
+    client = SmartPotClient(base_url="http://api.test", transport=httpx.MockTransport(down))
+    with TestClient(build_http_app(create_mcp_server(client)), base_url="http://localhost:8002") as http:
+        resp = http.get("/livez")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "UP"
+    assert called is False
+
+
+async def test_client_retries_get_once_on_remote_protocol_error():
+    attempts = 0
+
+    def flaky(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise httpx.RemoteProtocolError("stale connection closed", request=request)
+        return httpx.Response(200, json={"status": "UP"})
+
+    client = SmartPotClient(base_url="http://api.test", transport=httpx.MockTransport(flaky))
+    try:
+        res = await client.health()
+    finally:
+        await client.close()
+    assert res == {"status": "UP"}
+    assert attempts == 2
+
+
+async def test_token_validator_coalesces_concurrent_same_token_and_frees_distinct_tokens():
+    import asyncio
+
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        token = request.headers["authorization"].removeprefix("Bearer ")
+        calls.append(token)
+        return httpx.Response(200, json=ACCOUNTS[TOKEN_ANA])
+
+    client = SmartPotClient(base_url="http://api.test", transport=httpx.MockTransport(handler))
+    from app.core.security import TokenValidator
+
+    validator = TokenValidator(client, ttl_seconds=30.0)
+    try:
+        results = await asyncio.gather(
+            validator.valid(TOKEN_ANA),
+            validator.valid(TOKEN_ANA),
+            validator.valid(TOKEN_LUIS),
+        )
+    finally:
+        await client.close()
+    assert results == [True, True, True]
+    assert calls.count(TOKEN_ANA) == 1
+    assert calls.count(TOKEN_LUIS) == 1
+    assert validator._inflight == {}

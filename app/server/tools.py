@@ -101,9 +101,15 @@ def register_tools(mcp: MCPServer, client: SmartPotClient) -> None:
 
     @mcp.tool(name="get_account", title="Connected account", annotations=READ)
     async def get_account(ctx: Context) -> dict[str, Any]:
-        """Returns the name and email of the SmartPot account that owns this connection."""
+        """Returns the name, email, and role of the SmartPot account that owns this connection."""
         me = await user_api(client, ctx).me()
-        return {k: me.get(k) for k in ("id", "name", "lastName", "email") if isinstance(me, dict)}
+        if not isinstance(me, dict):
+            return {}
+        account = {k: me.get(k) for k in ("id", "name", "lastName", "email")}
+        for extra in ("role", "createdAt"):
+            if extra in me:
+                account[extra] = me[extra]
+        return account
 
     # ---------------------------------------------------------------- Cultivos
 
@@ -130,7 +136,7 @@ def register_tools(mcp: MCPServer, client: SmartPotClient) -> None:
         latitude: Annotated[float, Field(ge=-90, le=90)] | None = None,
         longitude: Annotated[float, Field(ge=-180, le=180)] | None = None,
         virtual_mode: Literal["AUTO", "MANUAL", "WEATHER"] = "AUTO",
-        virtual_interval_seconds: Annotated[int, Field(ge=5, le=3600)] = 15,
+        virtual_interval_seconds: Annotated[int, Field(ge=10, le=300)] = 15,
     ) -> dict[str, Any]:
         """Creates a crop. VIRTUAL is fed by the simulator; REAL returns one-time device MQTT credentials,
         which the server redacts from the model."""
@@ -141,6 +147,8 @@ def register_tools(mcp: MCPServer, client: SmartPotClient) -> None:
         if placement:
             payload["placement"] = placement
         if kind == "VIRTUAL":
+            if virtual_mode == "WEATHER" and (latitude is None or longitude is None):
+                raise ToolError("WEATHER simulation mode requires both latitude and longitude")
             payload["virtual"] = {"mode": virtual_mode, "intervalSeconds": virtual_interval_seconds}
         created = await user_api(client, ctx).create_crop(payload)
         if isinstance(created, dict) and created.get("device"):
@@ -220,12 +228,12 @@ def register_tools(mcp: MCPServer, client: SmartPotClient) -> None:
     async def record_reading(
         ctx: Context,
         crop_id: ObjectId,
-        temperature: float | None = None,
+        temperature: Annotated[float, Field(ge=-20, le=60)] | None = None,
         humidity: Annotated[float, Field(ge=0, le=100)] | None = None,
-        brightness: Annotated[float, Field(ge=0)] | None = None,
+        brightness: Annotated[float, Field(ge=0, le=200000)] | None = None,
         ph: Annotated[float, Field(ge=0, le=14)] | None = None,
-        tds: Annotated[float, Field(ge=0)] | None = None,
-        atmosphere: Annotated[float, Field(ge=0)] | None = None,
+        tds: Annotated[float, Field(ge=0, le=10000)] | None = None,
+        atmosphere: Annotated[float, Field(ge=300, le=1100)] | None = None,
         soil_moisture: Annotated[float, Field(ge=0, le=100)] | None = None,
     ) -> dict[str, Any]:
         """Records a manually measured reading on a virtual crop (at least one variable required).
@@ -279,7 +287,7 @@ def register_tools(mcp: MCPServer, client: SmartPotClient) -> None:
     @mcp.tool(name="send_bulk_command", title="Trigger multiple crops", annotations=PHYSICAL)
     async def send_bulk_command(
         ctx: Context,
-        crop_ids: Annotated[list[ObjectId], Field(min_length=1, max_length=50)],
+        crop_ids: Annotated[list[ObjectId], Field(min_length=1, max_length=20)],
         actuator_type: ActuatorType,
         action: Action,
         duration_seconds: Duration | None = None,

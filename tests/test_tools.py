@@ -433,3 +433,50 @@ async def test_prompts_describe_the_available_workflows(mcp_server):
     summary = await mcp_server.get_prompt("fleet_daily_summary", {"hours": 12})
     text = summary.messages[0].content.text
     assert "last 12 h" in text and "get_overview" in text
+
+
+async def test_tool_validation_aligns_with_api_limits(mcp_server, fake_api, stdio_token):
+    with pytest.raises(ToolError, match="WEATHER"):
+        await mcp_server.call_tool(
+            "create_crop",
+            {"name": "WeatherBasil", "crop_type": "BASIL", "kind": "VIRTUAL", "virtual_mode": "WEATHER"},
+        )
+    with pytest.raises(ToolError, match="virtual_interval_seconds"):
+        await mcp_server.call_tool(
+            "create_crop",
+            {"name": "FastBasil", "crop_type": "BASIL", "kind": "VIRTUAL", "virtual_interval_seconds": 5},
+        )
+    with pytest.raises(ToolError, match="temperature"):
+        await mcp_server.call_tool("record_reading", {"crop_id": CROP, "temperature": 61.0})
+    with pytest.raises(ToolError, match="atmosphere"):
+        await mcp_server.call_tool("record_reading", {"crop_id": CROP, "atmosphere": 100.0})
+    with pytest.raises(ToolError, match="tds"):
+        await mcp_server.call_tool("record_reading", {"crop_id": CROP, "tds": 10001.0})
+    with pytest.raises(ToolError, match="crop_ids"):
+        await mcp_server.call_tool(
+            "send_bulk_command",
+            {"crop_ids": [CROP] * 21, "actuator_type": "FAN", "action": "ACTIVATE"},
+        )
+    assert fake_api.seen == []
+
+
+async def test_account_and_validation_error_details_surface_api_fields(mcp_server, monkeypatch, stdio_token):
+    import httpx
+
+    from app.client.api_client import SmartPotClient, _error_message
+
+    resp = httpx.Response(
+        400,
+        json={"message": "Validation failed", "fields": {"latitude": "Required for weather mode"}},
+    )
+    msg = _error_message(resp)
+    assert "Validation failed" in msg and "latitude: Required for weather mode" in msg
+
+    async def rich_me(self):
+        return {"id": "u1", "name": "Ana", "lastName": "Perez", "email": "ana@smartpot.app", "role": "USER"}
+
+    monkeypatch.setattr(UserAPI, "me", rich_me)
+    result = await mcp_server.call_tool("get_account", {})
+    data = json.loads(_text(result))
+    assert data["role"] == "USER"
+    assert isinstance(SmartPotClient(base_url="http://api.test"), SmartPotClient)

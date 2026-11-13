@@ -70,11 +70,19 @@ class SmartPotClient:
         json_body: Any = None,
     ) -> Any:
         headers = {"Authorization": f"Bearer {token}"} if token else None
-        try:
-            resp = await self._http().request(method, path, params=params, json=json_body, headers=headers)
-        except httpx.HTTPError as exc:
-            logger.error("Network error calling SmartPot-API on %s %s: %s", method, path, type(exc).__name__)
-            raise SmartPotAPIError(503, "SmartPot-API is unavailable") from exc
+        for attempt in range(2):
+            try:
+                resp = await self._http().request(method, path, params=params, json=json_body, headers=headers)
+                break
+            except httpx.RemoteProtocolError as exc:
+                # Conexión keep-alive cerrada por el servidor justo antes de reutilizarla en un GET idempotente.
+                if method.upper() == "GET" and attempt == 0:
+                    continue
+                logger.error("Network error calling SmartPot-API on %s %s: %s", method, path, type(exc).__name__)
+                raise SmartPotAPIError(503, "SmartPot-API is unavailable") from exc
+            except httpx.HTTPError as exc:
+                logger.error("Network error calling SmartPot-API on %s %s: %s", method, path, type(exc).__name__)
+                raise SmartPotAPIError(503, "SmartPot-API is unavailable") from exc
         if resp.is_error:
             # Un 401 demuestra que el token dejó de ser válido (revocado o expirado): la caché no puede
             # seguir aceptándolo durante el TTL restante.
@@ -216,5 +224,10 @@ def _error_message(resp: httpx.Response) -> str:
     except ValueError:
         return f"SmartPot-API returned HTTP {resp.status_code}"
     if isinstance(body, dict):
-        return str(body.get("message") or body.get("error") or f"SmartPot-API returned HTTP {resp.status_code}")
+        base = str(body.get("message") or body.get("error") or f"SmartPot-API returned HTTP {resp.status_code}")
+        fields = body.get("fields")
+        if isinstance(fields, dict) and fields:
+            details = "; ".join(f"{key}: {value}" for key, value in fields.items())
+            return f"{base} ({details})"
+        return base
     return f"SmartPot-API returned HTTP {resp.status_code}"

@@ -35,9 +35,22 @@ PHYSICAL = ToolAnnotations(read_only_hint=False, destructive_hint=True, idempote
 DESTRUCTIVE = ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=True, open_world_hint=False)
 
 
+def _build_location(place: str | None, lat: Any, lon: Any) -> dict[str, Any]:
+    if lat is None or lon is None:
+        raise ToolError("Both latitude and longitude are required when specifying a location")
+    location_name = (place or "").strip() if isinstance(place, str) else ""
+    if not location_name:
+        location_name = f"{float(lat):.4f}, {float(lon):.4f}"
+    return {"name": location_name, "latitude": lat, "longitude": lon}
+
+
 def _placement(
     setting: str | None, exposure: str | None, place: str | None, lat: float | None, lon: float | None
 ) -> dict[str, Any] | None:
+    if (lat is None) != (lon is None):
+        raise ToolError("Both latitude and longitude are required when specifying a location")
+    if isinstance(place, str) and place.strip() and lat is None and lon is None:
+        raise ToolError("place_name requires both latitude and longitude when setting a location")
     if setting is None and exposure is None and lat is None and lon is None:
         return None
     placement: dict[str, Any] = {}
@@ -46,8 +59,39 @@ def _placement(
     if exposure:
         placement["exposure"] = exposure
     if lat is not None and lon is not None:
-        placement["location"] = {"name": place or "", "latitude": lat, "longitude": lon}
+        placement["location"] = _build_location(place, lat, lon)
     return placement
+
+
+def _merge_placement(
+    current: Any,
+    setting: str | None,
+    exposure: str | None,
+    place: str | None,
+    lat: float | None,
+    lon: float | None,
+) -> dict[str, Any] | None:
+    if setting is None and exposure is None and place is None and lat is None and lon is None:
+        return None
+    base = current if isinstance(current, dict) else {}
+    placement: dict[str, Any] = {}
+    merged_setting = setting if setting is not None else base.get("setting")
+    merged_exposure = exposure if exposure is not None else base.get("exposure")
+    if merged_setting:
+        placement["setting"] = merged_setting
+    if merged_exposure:
+        placement["exposure"] = merged_exposure
+    cur_loc = base.get("location") if isinstance(base.get("location"), dict) else {}
+    if place is not None or lat is not None or lon is not None:
+        next_lat = lat if lat is not None else cur_loc.get("latitude")
+        next_lon = lon if lon is not None else cur_loc.get("longitude")
+        raw_place = place if place is not None else cur_loc.get("name")
+        placement["location"] = _build_location(raw_place, next_lat, next_lon)
+    elif cur_loc.get("latitude") is not None and cur_loc.get("longitude") is not None:
+        placement["location"] = _build_location(
+            cur_loc.get("name"), cur_loc.get("latitude"), cur_loc.get("longitude")
+        )
+    return placement or None
 
 
 def register_tools(mcp: MCPServer, client: SmartPotClient) -> None:
@@ -123,7 +167,7 @@ def register_tools(mcp: MCPServer, client: SmartPotClient) -> None:
             "type": crop_type or current.get("type"),
             "form": form or current.get("form"),
         }
-        placement = _placement(setting, exposure, place_name, latitude, longitude)
+        placement = _merge_placement(current.get("placement"), setting, exposure, place_name, latitude, longitude)
         if placement:
             payload["placement"] = placement
         return await user_api(client, ctx).update_crop(crop_id, payload)

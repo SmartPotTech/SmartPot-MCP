@@ -254,6 +254,53 @@ async def test_update_crop_reads_the_current_values_before_writing(mcp_server, f
     assert (second["method"], second["path"]) == ("PUT", f"/api/v1/crops/{CROP}")
 
 
+async def test_update_crop_merges_existing_placement_and_validates_coordinates(
+    mcp_server, fake_api, monkeypatch, stdio_token
+):
+    existing = {
+        "id": CROP,
+        "name": "Lettuce",
+        "type": "LETTUCE",
+        "form": "NFT",
+        "placement": {
+            "setting": "OUTDOOR",
+            "exposure": "FULL_SUN",
+            "location": {"name": "Medellin", "latitude": 6.24, "longitude": -75.57},
+        },
+    }
+
+    async def mock_get_crop(self, crop_id):
+        return existing
+
+    monkeypatch.setattr(UserAPI, "get_crop", mock_get_crop)
+    result = await mcp_server.call_tool("update_crop", {"crop_id": CROP, "place_name": "Rooftop"})
+    assert not result.is_error
+    assert fake_api.details[-1]["body"]["placement"] == {
+        "setting": "OUTDOOR",
+        "exposure": "FULL_SUN",
+        "location": {"name": "Rooftop", "latitude": 6.24, "longitude": -75.57},
+    }
+
+
+async def test_create_crop_placement_requires_both_coordinates_and_supplies_nonempty_place_name(
+    mcp_server, fake_api, stdio_token
+):
+    with pytest.raises(ToolError, match="latitude and longitude"):
+        await mcp_server.call_tool(
+            "create_crop", {"name": "Basil", "crop_type": "BASIL", "latitude": 4.65}
+        )
+    assert fake_api.seen == []
+
+    result = await mcp_server.call_tool(
+        "create_crop",
+        {"name": "Basil", "crop_type": "BASIL", "latitude": 4.65, "longitude": -74.05},
+    )
+    assert not result.is_error
+    assert fake_api.details[-1]["body"]["placement"] == {
+        "location": {"name": "4.6500, -74.0500", "latitude": 4.65, "longitude": -74.05}
+    }
+
+
 async def test_create_virtual_crop_builds_placement_and_simulation(mcp_server, fake_api, stdio_token):
     arguments = {
         "name": "Balcony basil",

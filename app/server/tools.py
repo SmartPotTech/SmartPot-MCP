@@ -88,9 +88,7 @@ def _merge_placement(
         raw_place = place if place is not None else cur_loc.get("name")
         placement["location"] = _build_location(raw_place, next_lat, next_lon)
     elif cur_loc.get("latitude") is not None and cur_loc.get("longitude") is not None:
-        placement["location"] = _build_location(
-            cur_loc.get("name"), cur_loc.get("latitude"), cur_loc.get("longitude")
-        )
+        placement["location"] = _build_location(cur_loc.get("name"), cur_loc.get("latitude"), cur_loc.get("longitude"))
     return placement or None
 
 

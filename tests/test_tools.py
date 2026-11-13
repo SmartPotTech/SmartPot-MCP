@@ -286,9 +286,7 @@ async def test_create_crop_placement_requires_both_coordinates_and_supplies_none
     mcp_server, fake_api, stdio_token
 ):
     with pytest.raises(ToolError, match="latitude and longitude"):
-        await mcp_server.call_tool(
-            "create_crop", {"name": "Basil", "crop_type": "BASIL", "latitude": 4.65}
-        )
+        await mcp_server.call_tool("create_crop", {"name": "Basil", "crop_type": "BASIL", "latitude": 4.65})
     assert fake_api.seen == []
 
     result = await mcp_server.call_tool(
